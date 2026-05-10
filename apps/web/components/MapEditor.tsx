@@ -4,6 +4,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  FileText,
   ImagePlus,
   Layers3,
   MapPin,
@@ -39,6 +40,7 @@ import {
   Point,
   saveCampaignDraft
 } from "../lib/campaignApi";
+import { downloadCanvasAsPdf } from "../lib/pdfExport";
 
 type Tool = "select" | "pan" | "marker" | "label" | "line" | "freehand";
 
@@ -653,14 +655,12 @@ export function MapEditor() {
     });
   };
 
-  const exportPng = async () => {
+  const renderViewportCanvas = useCallback(async () => {
     const bounds = viewportRef.current?.getBoundingClientRect();
 
     if (!bounds) {
-      return;
+      return null;
     }
-
-    setStatus("Rendering PNG");
 
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     const canvas = document.createElement("canvas");
@@ -669,8 +669,7 @@ export function MapEditor() {
     const context = canvas.getContext("2d");
 
     if (!context) {
-      setStatus("PNG export is not available");
-      return;
+      return null;
     }
 
     context.scale(pixelRatio, pixelRatio);
@@ -689,6 +688,25 @@ export function MapEditor() {
 
     objects.forEach((object) => drawExportObject(context, object));
     context.restore();
+    return canvas;
+  }, [
+    image,
+    objects,
+    view.scale,
+    view.x,
+    view.y,
+    worldSize.height,
+    worldSize.width
+  ]);
+
+  const exportPng = async () => {
+    setStatus("Rendering PNG");
+    const canvas = await renderViewportCanvas();
+
+    if (!canvas) {
+      setStatus("PNG export is not available");
+      return;
+    }
 
     const link = document.createElement("a");
     link.href = canvas.toDataURL("image/png");
@@ -697,13 +715,33 @@ export function MapEditor() {
     setStatus("PNG exported");
   };
 
+  const exportPdf = async () => {
+    setStatus("Rendering PDF");
+    const canvas = await renderViewportCanvas();
+
+    if (!canvas) {
+      setStatus("PDF export is not available");
+      return;
+    }
+
+    downloadCanvasAsPdf(
+      canvas,
+      `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "map"}-view.pdf`
+    );
+    setStatus("PDF exported");
+  };
+
   const saveDraft = async () => {
     setStatus("Saving draft");
 
     try {
       const snapshot = makeSnapshot(title, image, objects, view);
       const result = await saveCampaignDraft(snapshot);
-      setStatus(result.savedAt ? `Saved ${new Date(result.savedAt).toLocaleTimeString()}` : "Saved");
+      setStatus(
+        result.savedAt
+          ? `Saved ${new Date(result.savedAt).toLocaleTimeString()}`
+          : "Saved"
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Save failed");
     }
@@ -849,6 +887,15 @@ export function MapEditor() {
           >
             <Download size={18} />
             <span>PNG</span>
+          </button>
+          <button
+            className="primary-button"
+            onClick={exportPdf}
+            title="Export PDF"
+            type="button"
+          >
+            <FileText size={18} />
+            <span>PDF</span>
           </button>
         </div>
       </header>
