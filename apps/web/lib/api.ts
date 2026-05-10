@@ -76,6 +76,7 @@ export type Campaign = {
   description: string | null;
   created_at: string;
   updated_at: string;
+  role: "owner" | "dm" | "player" | "viewer" | null;
 };
 
 export type CampaignMap = {
@@ -269,8 +270,13 @@ function qs(params: Record<string, string | number | boolean | undefined>) {
 
 export const api = {
   auth: {
-    loginUrl: (provider: "discord" | "google" | "github") =>
-      apiUrl(`/auth/${provider}/login`),
+    loginUrl: (
+      provider: "discord" | "google" | "github",
+      options: { next?: string } = {}
+    ) => {
+      const query = options.next ? `?next=${encodeURIComponent(options.next)}` : "";
+      return apiUrl(`/auth/${provider}/login${query}`);
+    },
     me: () => apiFetch<User>("/auth/me"),
     logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" })
   },

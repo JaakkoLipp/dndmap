@@ -1,4 +1,5 @@
 import secrets
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -30,8 +31,24 @@ def _get_provider_credentials(settings: Settings, provider_name: str) -> tuple[s
     return client_id, client_secret
 
 
+def _safe_next(next_path: str | None) -> str:
+    """Restrict ``next`` to a local absolute path so the redirect can't escape the site."""
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+        return "/campaigns"
+    return next_path
+
+
+def _login_error_redirect(provider: str, error: str, next_path: str) -> RedirectResponse:
+    qs = urlencode({"error": error, "provider": provider, "next": next_path})
+    return RedirectResponse(url=f"/login?{qs}", status_code=302)
+
+
 @router.get("/{provider}/login")
-async def oauth_login(provider: str, request: Request) -> RedirectResponse:
+async def oauth_login(
+    provider: str,
+    request: Request,
+    next: str | None = None,
+) -> RedirectResponse:
     settings: Settings = request.app.state.settings
     provider_adapter = get_provider(provider)
     if not provider_adapter:
@@ -42,7 +59,10 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
 
     client_id, _ = _get_provider_credentials(settings, provider)
     nonce = secrets.token_urlsafe(16)
-    state = sign_state(settings.session_secret, nonce)
+    state = sign_state(
+        settings.session_secret,
+        {"n": nonce, "next": _safe_next(next)},
+    )
     redirect_uri = f"{settings.oauth_redirect_base_url}/{provider}/callback"
     url = provider_adapter.build_authorization_url(client_id, redirect_uri, state)
     return RedirectResponse(url)
@@ -51,8 +71,10 @@ async def oauth_login(provider: str, request: Request) -> RedirectResponse:
 @router.get("/{provider}/callback")
 async def oauth_callback(
     provider: str,
-    code: str,
-    state: str,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    *,
     request: Request,
     response: Response,
     db: DbSession,
@@ -63,34 +85,51 @@ async def oauth_callback(
     if not settings.session_secret:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="session_secret not configured")
 
-    if not verify_state(settings.session_secret, state):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OAuth state")
+    if error:
+        # Provider sent us back with an explicit error (denied consent, etc.)
+        return _login_error_redirect(provider, f"provider:{error}", "/campaigns")
+
+    if not state or not code:
+        return _login_error_redirect(provider, "missing_state_or_code", "/campaigns")
+
+    state_payload = verify_state(settings.session_secret, state)
+    next_path = "/campaigns"
+    if isinstance(state_payload, dict):
+        next_path = _safe_next(state_payload.get("next"))
+    elif state_payload is None:
+        return _login_error_redirect(provider, "invalid_state", "/campaigns")
 
     provider_adapter = get_provider(provider)
     if not provider_adapter:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown OAuth provider")
+        return _login_error_redirect(provider, "unknown_provider", next_path)
 
-    client_id, client_secret = _get_provider_credentials(settings, provider)
+    try:
+        client_id, client_secret = _get_provider_credentials(settings, provider)
+    except HTTPException:
+        return _login_error_redirect(provider, "provider_not_configured", next_path)
+
     redirect_uri = f"{settings.oauth_redirect_base_url}/{provider}/callback"
 
     try:
         tokens = await provider_adapter.exchange_code(code, redirect_uri, client_id, client_secret)
         access_token = tokens.get("access_token")
         if not access_token:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="No access token from provider")
+            return _login_error_redirect(provider, "no_access_token", next_path)
         profile = await provider_adapter.get_user_profile(access_token)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="OAuth provider error") from exc
+    except Exception:
+        return _login_error_redirect(provider, "provider_error", next_path)
 
     user = await _upsert_user(db, provider, profile, tokens)
 
     if not settings.jwt_secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="jwt_secret not configured")
+        return _login_error_redirect(provider, "jwt_not_configured", next_path)
 
     jwt_token = mint_token(user.id, settings)
-    redirect_resp = RedirectResponse(url="/campaigns", status_code=302)
+    # ``welcome=1`` lets the post-login page trigger a one-time toast.
+    separator = "&" if "?" in next_path else "?"
+    redirect_resp = RedirectResponse(
+        url=f"{next_path}{separator}welcome=1", status_code=302
+    )
     set_auth_cookie(
         redirect_resp,
         jwt_token,

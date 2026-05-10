@@ -40,6 +40,7 @@ class CampaignRead(ApiModel):
     description: str | None
     created_at: datetime
     updated_at: datetime
+    role: str | None = None
 
 
 class Point(ApiModel):

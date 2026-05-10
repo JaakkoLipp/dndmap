@@ -52,6 +52,12 @@ def test_state_round_trip():
     assert verify_state(_SETTINGS.session_secret, signed) == "abc123"
 
 
+def test_state_round_trip_with_dict_payload():
+    payload = {"n": "abc", "next": "/campaigns/x"}
+    signed = sign_state(_SETTINGS.session_secret, payload)
+    assert verify_state(_SETTINGS.session_secret, signed) == payload
+
+
 def test_state_tampered_returns_none():
     signed = sign_state(_SETTINGS.session_secret, "nonce")
     assert verify_state(_SETTINGS.session_secret, signed + "x") is None

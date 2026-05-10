@@ -22,8 +22,38 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 async def list_campaigns(
     store: StoreDependency,
     user: OptionalCurrentUser,
+    db: OptionalDbSession,
 ) -> list:
-    return await store.list_campaigns(user_id=user.id if user else None)
+    campaigns = await store.list_campaigns(user_id=user.id if user else None)
+    if not campaigns:
+        return campaigns
+
+    if user is None:
+        # Dev mode without auth: surface owner role so the UI shows pills.
+        return [
+            CampaignRead.model_validate(campaign).model_copy(
+                update={"role": orm.CampaignRole.OWNER.value}
+            )
+            for campaign in campaigns
+        ]
+
+    assert db is not None
+    campaign_ids = [campaign.id for campaign in campaigns]
+    result = await db.execute(
+        select(orm.CampaignMember.campaign_id, orm.CampaignMember.role).where(
+            orm.CampaignMember.user_id == user.id,
+            orm.CampaignMember.campaign_id.in_(campaign_ids),
+        )
+    )
+    roles: dict[UUID, str] = {
+        campaign_id: role.value for campaign_id, role in result.all()
+    }
+    return [
+        CampaignRead.model_validate(campaign).model_copy(
+            update={"role": roles.get(campaign.id)}
+        )
+        for campaign in campaigns
+    ]
 
 
 @router.post("", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
