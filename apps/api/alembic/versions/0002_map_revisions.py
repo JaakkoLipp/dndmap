@@ -39,7 +39,7 @@ def upgrade() -> None:
         ),
         sa.Column("actor_display_name", sa.String(120), nullable=True),
         sa.Column("event_type", sa.String(64), nullable=False),
-        sa.Column("summary", sa.String(500), nullable=False, server_default=""),
+        sa.Column("summary", sa.String(500), nullable=False, server_default=sa.text("''")),
         sa.Column(
             "payload",
             postgresql.JSONB,

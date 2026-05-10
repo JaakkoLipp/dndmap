@@ -15,7 +15,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.auth.dependencies import OptionalCurrentUser, get_campaign_member
 from app.core.rate_limit import MutationRateLimit
@@ -34,16 +34,23 @@ _ALLOWED_ROLES = {
 }
 
 
-async def _count_owners(db, campaign_id: UUID) -> int:
+async def _lock_owners(db, campaign_id: UUID) -> list[orm.CampaignMember]:
+    """Acquire row-level locks on every owner row for ``campaign_id``.
+
+    Used by mutations that need to enforce "at least one owner" without
+    races: while one transaction holds these locks, concurrent
+    demotions / removals serialize behind it. Rows are released when the
+    enclosing transaction commits or rolls back.
+    """
     result = await db.execute(
-        select(func.count())
-        .select_from(orm.CampaignMember)
+        select(orm.CampaignMember)
         .where(
             orm.CampaignMember.campaign_id == campaign_id,
             orm.CampaignMember.role == orm.CampaignRole.OWNER,
         )
+        .with_for_update()
     )
-    return int(result.scalar() or 0)
+    return list(result.scalars().all())
 
 
 @router.get(
@@ -98,18 +105,23 @@ async def update_member_role(
         )
     await get_campaign_member(campaign_id, user, db, minimum_role=orm.CampaignRole.OWNER)
 
-    member = await db.get(orm.CampaignMember, (campaign_id, user_id))
-    if member is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
-
     new_role = orm.CampaignRole(payload.role)
     if new_role not in _ALLOWED_ROLES:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid role")
 
+    # Lock owner rows before reading the count so the check + write happen
+    # in a single serialized transaction. Concurrent demotions are made to
+    # wait until this transaction completes.
+    owners = await _lock_owners(db, campaign_id)
+
+    member = await db.get(orm.CampaignMember, (campaign_id, user_id))
+    if member is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+
     if (
         member.role == orm.CampaignRole.OWNER
         and new_role != orm.CampaignRole.OWNER
-        and await _count_owners(db, campaign_id) <= 1
+        and len(owners) <= 1
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -159,11 +171,15 @@ async def remove_member(
             campaign_id, user, db, minimum_role=orm.CampaignRole.OWNER
         )
 
+    # Same locking pattern as the role-change path: serialize concurrent
+    # removals so the last-owner invariant cannot be raced past.
+    owners = await _lock_owners(db, campaign_id)
+
     member = await db.get(orm.CampaignMember, (campaign_id, user_id))
     if member is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
 
-    if member.role == orm.CampaignRole.OWNER and await _count_owners(db, campaign_id) <= 1:
+    if member.role == orm.CampaignRole.OWNER and len(owners) <= 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Cannot remove the last owner",

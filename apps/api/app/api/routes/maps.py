@@ -17,7 +17,7 @@ from app.db import models as orm
 from app.db.session import OptionalDbSession
 from app.domain.models import CampaignMap
 from app.domain.schemas import MapCreate, MapRead, MapUpdate
-from app.realtime import EventType, actor_from_user, publish_event
+from app.realtime import EventType, actor_from_user, publish_event, write_revision
 from app.storage import ObjectStorage, StorageConfigurationError
 
 router = APIRouter(tags=["maps"])
@@ -128,15 +128,27 @@ async def update_map(
     if user is not None:
         assert db is not None
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
-    updated = await store.update_map(map_id, payload.model_dump(exclude_unset=True))
+    changes = payload.model_dump(exclude_unset=True)
+    updated = await store.update_map(map_id, changes)
     if updated is None:
         raise_not_found("Map")
+    event_payload = {"fields": sorted(changes.keys())}
     await publish_event(
         request,
         map_id,
         EventType.MAP_UPDATED,
         actor=actor_from_user(user),
-        payload={"fields": list(payload.model_dump(exclude_unset=True).keys())},
+        payload=event_payload,
+    )
+    await write_revision(
+        db,
+        map_id=map_id,
+        event_type=EventType.MAP_UPDATED,
+        actor=user,
+        summary=f"Updated map fields: {', '.join(event_payload['fields'])}"
+        if event_payload["fields"]
+        else "Updated map",
+        payload=event_payload,
     )
     return _with_presigned_image_url(updated, storage)
 
@@ -202,12 +214,21 @@ async def upload_map_image(
     )
     if updated is None:
         raise_not_found("Map")
+    event_payload = {"width": width, "height": height, "filename": filename}
     await publish_event(
         request,
         map_id,
         EventType.MAP_IMAGE_UPDATED,
         actor=actor_from_user(user),
-        payload={"width": width, "height": height},
+        payload=event_payload,
+    )
+    await write_revision(
+        db,
+        map_id=map_id,
+        event_type=EventType.MAP_IMAGE_UPDATED,
+        actor=user,
+        summary=f"Uploaded image \"{filename}\" ({width}×{height})",
+        payload=event_payload,
     )
     return _with_presigned_image_url(updated, storage)
 

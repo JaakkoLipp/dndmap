@@ -43,7 +43,7 @@ function Avatar({ name, src }: { name: string; src: string | null }) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        alt=""
+        alt={`Avatar of ${name}`}
         height={32}
         src={src}
         style={{
@@ -124,14 +124,23 @@ export function MembersPanel({ campaignId, viewerRole }: MembersPanelProps) {
 
   const canManage = canManageCampaign(viewerRole);
   const members = membersQuery.data ?? [];
+  const queryErrorMessage = membersQuery.error
+    ? membersQuery.error instanceof ApiError
+      ? membersQuery.error.detail
+      : membersQuery.error instanceof Error
+        ? membersQuery.error.message
+        : "Members could not be loaded"
+    : null;
 
   if (membersQuery.isLoading) {
     return <div className="empty-state">Loading members…</div>;
   }
 
   // In dev/no-auth mode the route returns []. Hide the panel rather than
-  // showing an empty section.
-  if (members.length === 0 && !user) {
+  // showing an empty section, *unless* the query itself errored — then
+  // surface the failure so a misconfigured deployment isn't mistaken for
+  // an empty roster.
+  if (members.length === 0 && !user && !queryErrorMessage) {
     return null;
   }
 
@@ -151,6 +160,16 @@ export function MembersPanel({ campaignId, viewerRole }: MembersPanelProps) {
           {members.length}
         </span>
       </div>
+
+      {queryErrorMessage ? (
+        <div
+          className="notice error-notice"
+          role="alert"
+          style={{ marginBottom: "0.5rem" }}
+        >
+          {queryErrorMessage}
+        </div>
+      ) : null}
 
       {error ? (
         <div

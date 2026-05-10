@@ -1,10 +1,10 @@
 """Helpers to write map revision rows from REST mutation handlers.
 
-Each successful mutation should publish a realtime event *and* write a
-revision row. The two live next to each other in ``app.realtime`` because
-they share the same envelope shape and actor concept; the revision write
-is best-effort and silently skipped when the database is not configured
-(in-memory test mode).
+Mutation routes for maps, layers, and objects publish a realtime event
+and write a revision row. The two helpers live next to each other in
+``app.realtime`` because they share the same envelope shape and actor
+concept; the revision write is best-effort and silently skipped when the
+database is not configured (in-memory test mode).
 """
 
 from __future__ import annotations
@@ -43,4 +43,11 @@ async def write_revision(
         db.add(revision)
         await db.commit()
     except Exception:  # pragma: no cover - defensive
+        # Roll the failed transaction back so the session is reusable for
+        # subsequent operations in the same request; otherwise SQLAlchemy
+        # marks the session as failed and every follow-on call errors.
+        try:
+            await db.rollback()
+        except Exception:
+            logger.exception("Failed to roll back after revision write error")
         logger.exception("Failed to write map revision for %s", event_type)

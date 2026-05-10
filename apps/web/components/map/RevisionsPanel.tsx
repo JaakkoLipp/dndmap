@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, History } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { api, queryKeys, type MapRevision } from "../../lib/api";
+import { api, ApiError, queryKeys, type MapRevision } from "../../lib/api";
 import type { RealtimeEnvelope } from "../../lib/realtime";
 
 type RevisionsPanelProps = {
@@ -123,6 +123,31 @@ export function RevisionsPanel({ mapId, lastEvent }: RevisionsPanelProps) {
             <p className="muted-copy" style={{ fontSize: "0.8125rem" }}>
               Loading…
             </p>
+          ) : null}
+
+          {revisionsQuery.isError ? (
+            <div
+              className="notice error-notice"
+              role="alert"
+              style={{ fontSize: "0.8125rem", marginBottom: "0.5rem" }}
+            >
+              <p style={{ margin: 0 }}>
+                Couldn&apos;t load history:{" "}
+                {revisionsQuery.error instanceof ApiError
+                  ? revisionsQuery.error.detail
+                  : revisionsQuery.error instanceof Error
+                    ? revisionsQuery.error.message
+                    : "Unknown error"}
+              </p>
+              <button
+                className="subtle-button"
+                onClick={() => revisionsQuery.refetch()}
+                style={{ marginTop: "0.375rem", fontSize: "0.75rem" }}
+                type="button"
+              >
+                Retry
+              </button>
+            </div>
           ) : null}
 
           {revisionsQuery.data && revisionsQuery.data.length === 0 ? (
