@@ -25,3 +25,15 @@ def test_campaign_crud(client):
     missing = client.get(f"/api/v1/campaigns/{campaign['id']}")
     assert missing.status_code == 404
 
+
+def test_campaign_me_returns_synthetic_owner_in_dev_mode(client):
+    """When auth is off, /campaigns/{id}/me returns an owner stub for the UI."""
+    created = client.post("/api/v1/campaigns", json={"name": "Devmode"})
+    assert created.status_code == 201
+    campaign_id = created.json()["id"]
+
+    response = client.get(f"/api/v1/campaigns/{campaign_id}/me")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["campaign_id"] == campaign_id
+    assert body["role"] == "owner"

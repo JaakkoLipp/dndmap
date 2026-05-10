@@ -17,6 +17,12 @@ import {
   annotationToEditorObject,
   editorObjectToPayload
 } from "../../../../../lib/editorMapping";
+import {
+  ROLE_LABEL,
+  canAnnotate,
+  canEditMaps,
+  type Role
+} from "../../../../../lib/roles";
 
 type HostedMapEditorProps = {
   campaignId: string;
@@ -50,6 +56,14 @@ export function HostedMapEditor({ campaignId, mapId }: HostedMapEditorProps) {
     campaignId,
     mapId
   });
+  const meQuery = useQuery({
+    queryKey: queryKeys.campaignMe(campaignId),
+    queryFn: () => api.campaigns.me(campaignId),
+    retry: false
+  });
+  const role: Role | undefined = meQuery.data?.role;
+  const allowAnnotate = canAnnotate(role) || role === undefined;
+  const allowEditMap = canEditMaps(role) || role === undefined;
   const mapQuery = useQuery({
     queryKey: queryKeys.map(mapId),
     queryFn: () => api.maps.get(mapId)
@@ -154,19 +168,42 @@ export function HostedMapEditor({ campaignId, mapId }: HostedMapEditorProps) {
           top: "1rem",
           right: "1rem",
           zIndex: 50,
+          display: "flex",
+          gap: "0.5rem",
+          alignItems: "center",
           pointerEvents: "auto"
         }}
       >
+        {role && !allowAnnotate ? (
+          <span
+            style={{
+              padding: "0.25rem 0.75rem",
+              background: "rgba(15, 23, 42, 0.85)",
+              color: "#fbbf24",
+              borderRadius: "999px",
+              border: "1px solid #fbbf24",
+              fontSize: "0.8125rem"
+            }}
+          >
+            Read-only · {ROLE_LABEL[role]}
+          </span>
+        ) : null}
         <PresenceIndicator state={realtimeState} presence={presence} />
       </div>
       <MapEditor
         initialImage={editorImage}
         initialObjects={editorObjects}
         initialTitle={mapQuery.data?.name ?? "Campaign Map"}
-        onSave={(snapshot) => saveMap.mutateAsync(snapshot)}
-        onUploadImage={async (file) => {
-          await uploadImage.mutateAsync(file);
-        }}
+        onSave={
+          allowAnnotate ? (snapshot) => saveMap.mutateAsync(snapshot) : undefined
+        }
+        onUploadImage={
+          allowEditMap
+            ? async (file) => {
+                await uploadImage.mutateAsync(file);
+              }
+            : undefined
+        }
         saveLabel={saveMap.isPending ? "Saving" : "Save"}
       />
     </>

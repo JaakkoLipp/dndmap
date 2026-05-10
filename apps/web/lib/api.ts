@@ -248,6 +248,7 @@ export const queryKeys = {
   authMe: ["auth", "me"] as const,
   campaigns: ["campaigns"] as const,
   campaign: (id: string) => ["campaigns", id] as const,
+  campaignMe: (id: string) => ["campaigns", id, "me"] as const,
   campaignMaps: (id: string) => ["campaigns", id, "maps"] as const,
   map: (id: string) => ["maps", id] as const,
   mapLayers: (id: string) => ["maps", id, "layers"] as const,
@@ -281,6 +282,7 @@ export const api = {
         body: JSON.stringify(payload)
       }),
     get: (id: string) => apiFetch<Campaign>(`/campaigns/${id}`),
+    me: (id: string) => apiFetch<CampaignMember>(`/campaigns/${id}/me`),
     update: (id: string, payload: { name?: string; description?: string | null }) =>
       apiFetch<Campaign>(`/campaigns/${id}`, {
         method: "PATCH",
