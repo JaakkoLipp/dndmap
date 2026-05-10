@@ -260,6 +260,39 @@ class MapObjectRow(Base):
     layer: Mapped["MapLayer"] = relationship(back_populates="objects")
 
 
+class MapRevision(Base):
+    """Append-only audit log of map mutations.
+
+    A row is written for every object/layer/map mutation that succeeds.
+    Used by ``GET /maps/{id}/revisions`` for audit history and (future) undo.
+    """
+
+    __tablename__ = "map_revisions"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    map_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("campaign_maps.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    actor_display_name: Mapped[str | None] = mapped_column(String(120))
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
 class MapExport(Base):
     __tablename__ = "map_exports"
 

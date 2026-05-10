@@ -58,7 +58,7 @@ Slices done (see `apps/api/app/realtime/`):
 Still open:
 
 - [ ] Implement object locking while a user is dragging (Redis TTL keys, UI lock indicators).
-- [ ] Add revision history writes on object mutation (`map_revisions` migration + `GET /maps/{id}/revisions`).
+- [x] Add revision history writes on object mutation (`map_revisions` migration + `GET /maps/{id}/revisions`). Frontend has a collapsible Recent Activity panel in the hosted editor.
 - [ ] Implement export job workers that generate server-side PNG/PDF respecting DM/player visibility.
 - [ ] Cross-process presence snapshot (currently snapshot is per-API-process).
 

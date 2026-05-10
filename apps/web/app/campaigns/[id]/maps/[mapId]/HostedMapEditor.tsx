@@ -5,6 +5,7 @@ import { useMemo } from "react";
 
 import { MapEditor } from "../../../../../components/MapEditor";
 import { PresenceIndicator } from "../../../../../components/map/PresenceIndicator";
+import { RevisionsPanel } from "../../../../../components/map/RevisionsPanel";
 import { useMapRealtime } from "../../../../../hooks/useMapRealtime";
 import {
   api,
@@ -52,7 +53,7 @@ function findAnnotationLayer(layers: MapLayer[]) {
 
 export function HostedMapEditor({ campaignId, mapId }: HostedMapEditorProps) {
   const queryClient = useQueryClient();
-  const { state: realtimeState, presence } = useMapRealtime({
+  const { state: realtimeState, presence, lastEvent } = useMapRealtime({
     campaignId,
     mapId
   });
@@ -206,6 +207,7 @@ export function HostedMapEditor({ campaignId, mapId }: HostedMapEditorProps) {
         }
         saveLabel={saveMap.isPending ? "Saving" : "Save"}
       />
+      <RevisionsPanel mapId={mapId} lastEvent={lastEvent} />
     </>
   );
 }

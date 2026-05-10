@@ -725,3 +725,14 @@ class CampaignMemberDetail(ApiModel):
 
 class CampaignMemberUpdate(ApiModel):
     role: Literal["owner", "dm", "player", "viewer"]
+
+
+class MapRevisionRead(ApiModel):
+    id: UUID
+    map_id: UUID
+    actor_user_id: UUID | None
+    actor_display_name: str | None
+    event_type: str
+    summary: str
+    payload: dict[str, Any]
+    created_at: datetime

@@ -185,6 +185,17 @@ export type CampaignMemberDetail = CampaignMember & {
   avatar_url: string | null;
 };
 
+export type MapRevision = {
+  id: string;
+  map_id: string;
+  actor_user_id: string | null;
+  actor_display_name: string | null;
+  event_type: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
 export type Point = {
   x: number;
   y: number;
@@ -260,7 +271,8 @@ export const queryKeys = {
   map: (id: string) => ["maps", id] as const,
   mapLayers: (id: string) => ["maps", id, "layers"] as const,
   mapObjects: (id: string, filters?: Record<string, unknown>) =>
-    ["maps", id, "objects", filters ?? {}] as const
+    ["maps", id, "objects", filters ?? {}] as const,
+  mapRevisions: (id: string) => ["maps", id, "revisions"] as const
 };
 
 function qs(params: Record<string, string | number | boolean | undefined>) {
@@ -403,6 +415,10 @@ export const api = {
         body: JSON.stringify(payload)
       }),
     delete: (id: string) => apiFetch<void>(`/objects/${id}`, { method: "DELETE" })
+  },
+  revisions: {
+    list: (mapId: string, limit = 50) =>
+      apiFetch<MapRevision[]>(`/maps/${mapId}/revisions?limit=${limit}`)
   },
   members: {
     list: (campaignId: string) =>

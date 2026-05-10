@@ -11,6 +11,7 @@ from app.api.routes import (
     members,
     objects,
     realtime,
+    revisions,
 )
 
 health_router = APIRouter()
@@ -27,3 +28,4 @@ api_router.include_router(exports.router)
 api_router.include_router(invites.router)
 api_router.include_router(members.router)
 api_router.include_router(realtime.router)
+api_router.include_router(revisions.router)
