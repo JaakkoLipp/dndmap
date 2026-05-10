@@ -1,12 +1,19 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, HTTPException, Response, status
+from sqlalchemy import select
 
 from app.api.dependencies import StoreDependency, raise_not_found
 from app.auth.dependencies import OptionalCurrentUser, get_campaign_member
 from app.db import models as orm
 from app.db.session import OptionalDbSession
-from app.domain.schemas import CampaignCreate, CampaignRead, CampaignUpdate
+from app.domain.models import utc_now
+from app.domain.schemas import (
+    CampaignCreate,
+    CampaignMemberRead,
+    CampaignRead,
+    CampaignUpdate,
+)
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -15,8 +22,38 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 async def list_campaigns(
     store: StoreDependency,
     user: OptionalCurrentUser,
+    db: OptionalDbSession,
 ) -> list:
-    return await store.list_campaigns(user_id=user.id if user else None)
+    campaigns = await store.list_campaigns(user_id=user.id if user else None)
+    if not campaigns:
+        return campaigns
+
+    if user is None:
+        # Dev mode without auth: surface owner role so the UI shows pills.
+        return [
+            CampaignRead.model_validate(campaign).model_copy(
+                update={"role": orm.CampaignRole.OWNER.value}
+            )
+            for campaign in campaigns
+        ]
+
+    assert db is not None
+    campaign_ids = [campaign.id for campaign in campaigns]
+    result = await db.execute(
+        select(orm.CampaignMember.campaign_id, orm.CampaignMember.role).where(
+            orm.CampaignMember.user_id == user.id,
+            orm.CampaignMember.campaign_id.in_(campaign_ids),
+        )
+    )
+    roles: dict[UUID, str] = {
+        campaign_id: role.value for campaign_id, role in result.all()
+    }
+    return [
+        CampaignRead.model_validate(campaign).model_copy(
+            update={"role": roles.get(campaign.id)}
+        )
+        for campaign in campaigns
+    ]
 
 
 @router.post("", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
@@ -41,6 +78,37 @@ async def create_campaign(
         )
         await db.commit()
     return campaign
+
+
+@router.get("/{campaign_id}/me", response_model=CampaignMemberRead)
+async def get_my_membership(
+    campaign_id: UUID,
+    user: OptionalCurrentUser,
+    db: OptionalDbSession,
+):
+    """Return the requesting user's role + join time for this campaign.
+
+    In dev/memory mode (no auth) a synthetic owner membership is returned so
+    the frontend can develop against the role-aware UI without auth wired.
+    """
+    if user is None:
+        return CampaignMemberRead(
+            campaign_id=campaign_id,
+            user_id=UUID(int=0),
+            role=orm.CampaignRole.OWNER.value,
+            joined_at=utc_now(),
+        )
+    assert db is not None
+    result = await db.execute(
+        select(orm.CampaignMember).where(
+            orm.CampaignMember.campaign_id == campaign_id,
+            orm.CampaignMember.user_id == user.id,
+        )
+    )
+    member = result.scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not a member")
+    return member
 
 
 @router.get("/{campaign_id}", response_model=CampaignRead)

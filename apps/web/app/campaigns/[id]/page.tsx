@@ -6,7 +6,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { AppHeader } from "../../../components/layout/AppHeader";
 import { api, ApiError, queryKeys, type Invite } from "../../../lib/api";
+import {
+  ROLE_LABEL,
+  canCreateInvites,
+  canEditMaps,
+  type Role
+} from "../../../lib/roles";
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +24,11 @@ export default function CampaignDetailPage() {
   const campaignQuery = useQuery({
     queryKey: queryKeys.campaign(id),
     queryFn: () => api.campaigns.get(id)
+  });
+  const meQuery = useQuery({
+    queryKey: queryKeys.campaignMe(id),
+    queryFn: () => api.campaigns.me(id),
+    retry: false
   });
   const mapsQuery = useQuery({
     queryKey: queryKeys.campaignMaps(id),
@@ -41,8 +53,13 @@ export default function CampaignDetailPage() {
     onSuccess: (invite) => setLatestInvite(invite)
   });
 
+  const role: Role | undefined = meQuery.data?.role;
+  const canEdit = canEditMaps(role);
+  const canInvite = canCreateInvites(role);
+
   const submitMap = (event: FormEvent) => {
     event.preventDefault();
+    if (!canEdit) return;
     const trimmed = mapName.trim();
     if (trimmed) {
       createMap.mutate(trimmed);
@@ -59,12 +76,15 @@ export default function CampaignDetailPage() {
 
   return (
     <main className="app-shell">
-      <header className="app-header">
-        <Link className="subtle-button" href="/campaigns">
-          <ArrowLeft size={18} />
-          <span>Campaigns</span>
-        </Link>
-      </header>
+      <AppHeader
+        leading={
+          <Link className="subtle-button" href="/campaigns">
+            <ArrowLeft size={18} />
+            <span>Campaigns</span>
+          </Link>
+        }
+        role={role}
+      />
 
       <section className="content-band">
         {authError ? (
@@ -79,17 +99,22 @@ export default function CampaignDetailPage() {
         <div className="section-title-row">
           <div>
             <h1>{campaignQuery.data?.name ?? "Campaign"}</h1>
-            <p>{campaignQuery.data?.description ?? "Maps, invites, and DM tools."}</p>
+            <p>
+              {campaignQuery.data?.description ?? "Maps, invites, and DM tools."}
+              {role ? ` · You are a ${ROLE_LABEL[role]}` : null}
+            </p>
           </div>
-          <button
-            className="tool-button"
-            disabled={createInvite.isPending}
-            onClick={() => createInvite.mutate()}
-            type="button"
-          >
-            {createInvite.isPending ? <Loader2 size={18} /> : <Ticket size={18} />}
-            <span>Create invite</span>
-          </button>
+          {canInvite ? (
+            <button
+              className="tool-button"
+              disabled={createInvite.isPending}
+              onClick={() => createInvite.mutate()}
+              type="button"
+            >
+              {createInvite.isPending ? <Loader2 size={18} /> : <Ticket size={18} />}
+              <span>Create invite</span>
+            </button>
+          ) : null}
         </div>
 
         {createInvite.error ? (
@@ -107,18 +132,28 @@ export default function CampaignDetailPage() {
           </div>
         ) : null}
 
-        <form className="inline-form" onSubmit={submitMap}>
-          <input
-            aria-label="Map name"
-            onChange={(event) => setMapName(event.target.value)}
-            placeholder="Map name"
-            value={mapName}
-          />
-          <button className="primary-button" disabled={createMap.isPending} type="submit">
-            {createMap.isPending ? <Loader2 size={18} /> : <Plus size={18} />}
-            <span>Create map</span>
-          </button>
-        </form>
+        {canEdit ? (
+          <form className="inline-form" onSubmit={submitMap}>
+            <input
+              aria-label="Map name"
+              onChange={(event) => setMapName(event.target.value)}
+              placeholder="New map name"
+              value={mapName}
+            />
+            <button
+              className="primary-button"
+              disabled={createMap.isPending}
+              type="submit"
+            >
+              {createMap.isPending ? <Loader2 size={18} /> : <Plus size={18} />}
+              <span>Create map</span>
+            </button>
+          </form>
+        ) : role ? (
+          <p className="muted-copy">
+            Map creation is restricted to DMs and owners.
+          </p>
+        ) : null}
 
         {mapsQuery.isLoading ? <div className="empty-state">Loading maps…</div> : null}
 

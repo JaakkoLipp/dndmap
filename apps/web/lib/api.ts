@@ -76,6 +76,7 @@ export type Campaign = {
   description: string | null;
   created_at: string;
   updated_at: string;
+  role: "owner" | "dm" | "player" | "viewer" | null;
 };
 
 export type CampaignMap = {
@@ -248,6 +249,7 @@ export const queryKeys = {
   authMe: ["auth", "me"] as const,
   campaigns: ["campaigns"] as const,
   campaign: (id: string) => ["campaigns", id] as const,
+  campaignMe: (id: string) => ["campaigns", id, "me"] as const,
   campaignMaps: (id: string) => ["campaigns", id, "maps"] as const,
   map: (id: string) => ["maps", id] as const,
   mapLayers: (id: string) => ["maps", id, "layers"] as const,
@@ -268,8 +270,13 @@ function qs(params: Record<string, string | number | boolean | undefined>) {
 
 export const api = {
   auth: {
-    loginUrl: (provider: "discord" | "google" | "github") =>
-      apiUrl(`/auth/${provider}/login`),
+    loginUrl: (
+      provider: "discord" | "google" | "github",
+      options: { next?: string } = {}
+    ) => {
+      const query = options.next ? `?next=${encodeURIComponent(options.next)}` : "";
+      return apiUrl(`/auth/${provider}/login${query}`);
+    },
     me: () => apiFetch<User>("/auth/me"),
     logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" })
   },
@@ -281,6 +288,7 @@ export const api = {
         body: JSON.stringify(payload)
       }),
     get: (id: string) => apiFetch<Campaign>(`/campaigns/${id}`),
+    me: (id: string) => apiFetch<CampaignMember>(`/campaigns/${id}/me`),
     update: (id: string, payload: { name?: string; description?: string | null }) =>
       apiFetch<Campaign>(`/campaigns/${id}`, {
         method: "PATCH",

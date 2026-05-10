@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { WelcomeToast } from "../components/layout/WelcomeToast";
 import { AuthProvider } from "../components/providers/AuthProvider";
 import { QueryProvider } from "../components/providers/QueryProvider";
 import "./globals.css";
@@ -18,7 +19,12 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <QueryProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {children}
+            <Suspense fallback={null}>
+              <WelcomeToast />
+            </Suspense>
+          </AuthProvider>
         </QueryProvider>
       </body>
     </html>
