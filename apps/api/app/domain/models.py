@@ -17,6 +17,12 @@ class LayerKind(str, Enum):
     NOTES = "notes"
 
 
+class MapAudience(str, Enum):
+    DM = "dm"
+    PLAYERS = "players"
+    ALL = "all"
+
+
 class MapObjectKind(str, Enum):
     MARKER = "marker"
     LABEL = "label"
@@ -56,6 +62,10 @@ class CampaignMap:
     height: int
     grid_size: int
     background_color: str = "#1f2937"
+    image_object_key: str | None = None
+    image_url: str | None = None
+    image_name: str | None = None
+    image_content_type: str | None = None
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
@@ -67,6 +77,7 @@ class Layer:
     name: str
     kind: LayerKind = LayerKind.OBJECTS
     visible: bool = True
+    audience: MapAudience = MapAudience.ALL
     opacity: float = 1.0
     sort_order: int = 0
     id: UUID = field(default_factory=uuid4)
@@ -80,11 +91,15 @@ class MapObject:
     layer_id: UUID
     name: str
     kind: MapObjectKind
-    x: float
-    y: float
-    width: float
-    height: float
+    x: float = 0.0
+    y: float = 0.0
+    width: float = 1.0
+    height: float = 1.0
     rotation: float = 0.0
+    visible: bool = True
+    audience: MapAudience = MapAudience.ALL
+    geometry: dict[str, Any] | None = None
+    style: dict[str, Any] | None = None
     properties: dict[str, Any] = field(default_factory=dict)
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=utc_now)

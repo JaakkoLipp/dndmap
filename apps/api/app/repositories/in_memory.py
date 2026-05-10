@@ -8,6 +8,7 @@ from app.domain.models import (
     CampaignMap,
     ExportJob,
     Layer,
+    MapAudience,
     MapObject,
     utc_now,
 )
@@ -99,11 +100,24 @@ class InMemoryMapStore:
             self._delete_map_cascade(map_id)
             return True
 
-    def list_layers(self, map_id: UUID | None = None) -> Sequence[Layer]:
+    def list_layers(
+        self,
+        map_id: UUID | None = None,
+        visible: bool | None = None,
+        audience: MapAudience | None = None,
+    ) -> Sequence[Layer]:
         with self._lock:
             layers = self._layers.values()
             if map_id is not None:
                 layers = [item for item in layers if item.map_id == map_id]
+            if visible is not None:
+                layers = [item for item in layers if item.visible is visible]
+            if audience is not None:
+                layers = [
+                    item
+                    for item in layers
+                    if _audience_value(item.audience) == _audience_value(audience)
+                ]
             return sorted(layers, key=lambda item: (item.sort_order, item.created_at))
 
     def create_layer(self, map_id: UUID, **values: Any) -> Layer:
@@ -145,6 +159,8 @@ class InMemoryMapStore:
         self,
         map_id: UUID | None = None,
         layer_id: UUID | None = None,
+        visible: bool | None = None,
+        audience: MapAudience | None = None,
     ) -> Sequence[MapObject]:
         with self._lock:
             objects = self._objects.values()
@@ -152,6 +168,14 @@ class InMemoryMapStore:
                 objects = [item for item in objects if item.map_id == map_id]
             if layer_id is not None:
                 objects = [item for item in objects if item.layer_id == layer_id]
+            if visible is not None:
+                objects = [item for item in objects if item.visible is visible]
+            if audience is not None:
+                objects = [
+                    item
+                    for item in objects
+                    if _audience_value(item.audience) == _audience_value(audience)
+                ]
             return sorted(objects, key=lambda item: item.created_at)
 
     def create_object(self, map_id: UUID, **values: Any) -> MapObject:
@@ -232,3 +256,8 @@ class InMemoryMapStore:
             entity.updated_at = utc_now()
         return entity
 
+
+def _audience_value(audience: MapAudience | str) -> str:
+    if isinstance(audience, MapAudience):
+        return audience.value
+    return str(audience)

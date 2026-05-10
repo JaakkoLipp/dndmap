@@ -2,7 +2,14 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 from uuid import UUID
 
-from app.domain.models import Campaign, CampaignMap, ExportJob, Layer, MapObject
+from app.domain.models import (
+    Campaign,
+    CampaignMap,
+    ExportJob,
+    Layer,
+    MapAudience,
+    MapObject,
+)
 
 
 class MapDataStore(Protocol):
@@ -34,7 +41,12 @@ class MapDataStore(Protocol):
 
     def delete_map(self, map_id: UUID) -> bool: ...
 
-    def list_layers(self, map_id: UUID | None = None) -> Sequence[Layer]: ...
+    def list_layers(
+        self,
+        map_id: UUID | None = None,
+        visible: bool | None = None,
+        audience: MapAudience | None = None,
+    ) -> Sequence[Layer]: ...
 
     def create_layer(self, map_id: UUID, **values: Any) -> Layer: ...
 
@@ -52,6 +64,8 @@ class MapDataStore(Protocol):
         self,
         map_id: UUID | None = None,
         layer_id: UUID | None = None,
+        visible: bool | None = None,
+        audience: MapAudience | None = None,
     ) -> Sequence[MapObject]: ...
 
     def create_object(self, map_id: UUID, **values: Any) -> MapObject: ...
@@ -71,4 +85,3 @@ class MapDataStore(Protocol):
     def create_export(self, map_id: UUID, **values: Any) -> ExportJob: ...
 
     def get_export(self, export_id: UUID) -> ExportJob | None: ...
-
