@@ -17,7 +17,7 @@ def test_map_websocket_broadcasts_update_events(client):
     campaign = create_campaign(client)
     campaign_map = create_map(client, campaign["id"])
 
-    with client.websocket_connect(f"/api/v1/ws/maps/{campaign_map['id']}") as ws:
+    with client.websocket_connect(f"/api/v1/ws/campaigns/{campaign['id']}/maps/{campaign_map['id']}") as ws:
         connected = ws.receive_json()
         assert connected["type"] == "map.connected"
         assert connected["map_id"] == campaign_map["id"]

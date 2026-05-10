@@ -62,7 +62,7 @@ class LabelGeometry(ApiModel):
 
 
 class LineGeometry(ApiModel):
-    type: Literal["line"] = "line"
+    type: Literal["polyline"] = "polyline"
     points: list[Point] = Field(min_length=2, max_length=2)
 
 
@@ -256,14 +256,14 @@ def _geometry_from_legacy(
         text = str(properties.get("text") or properties.get("label") or "")
         return {"type": kind_value, "x": x_value, "y": y_value, "text": text}
 
-    if kind_value in {MapObjectKind.LINE.value, MapObjectKind.FREEHAND.value}:
+    if kind_value in {MapObjectKind.POLYLINE.value, MapObjectKind.FREEHAND.value}:
         points = _dump_points(properties.get("points"))
         if len(points) < 2:
             points = [
                 {"x": x_value, "y": y_value},
                 {"x": x_value + width_value, "y": y_value + height_value},
             ]
-        if kind_value == MapObjectKind.LINE.value:
+        if kind_value == MapObjectKind.POLYLINE.value:
             points = points[:2]
         return {"type": kind_value, "points": points}
 
@@ -373,7 +373,7 @@ def _geometry_with_legacy_changes(
         return geometry
 
     if geometry_type in {
-        MapObjectKind.LINE.value,
+        MapObjectKind.POLYLINE.value,
         MapObjectKind.FREEHAND.value,
         MapObjectKind.POLYGON.value,
     }:

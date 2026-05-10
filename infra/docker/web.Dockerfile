@@ -24,7 +24,8 @@ RUN corepack enable \
     else \
       npm install && npm run build; \
     fi \
-    && npm cache clean --force
+    && npm cache clean --force \
+    && chown -R app:app /app
 
 USER app
 
