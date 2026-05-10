@@ -1,7 +1,21 @@
 name: "${COMPOSE_PROJECT_NAME:-dnd-campaign-map}"
 
+x-auth-environment: &auth-environment
+  PUBLIC_SITE_URL: "${PUBLIC_SITE_URL:-http://localhost:3000}"
+  AUTH_ENABLED: "${AUTH_ENABLED:-false}"
+  AUTH_OAUTH_PROVIDERS: "${AUTH_OAUTH_PROVIDERS:-discord,google,github}"
+  OAUTH_REDIRECT_BASE_URL: "${OAUTH_REDIRECT_BASE_URL:-http://localhost:3000/api/auth/callback}"
+  OAUTH_DISCORD_CLIENT_ID: "${OAUTH_DISCORD_CLIENT_ID:-}"
+  OAUTH_DISCORD_CLIENT_SECRET: "${OAUTH_DISCORD_CLIENT_SECRET:-}"
+  OAUTH_GOOGLE_CLIENT_ID: "${OAUTH_GOOGLE_CLIENT_ID:-}"
+  OAUTH_GOOGLE_CLIENT_SECRET: "${OAUTH_GOOGLE_CLIENT_SECRET:-}"
+  OAUTH_GITHUB_CLIENT_ID: "${OAUTH_GITHUB_CLIENT_ID:-}"
+  OAUTH_GITHUB_CLIENT_SECRET: "${OAUTH_GITHUB_CLIENT_SECRET:-}"
+
 x-api-environment: &api-environment
+  <<: *auth-environment
   APP_ENV: "${APP_ENV:-development}"
+  PERSISTENCE_BACKEND: "${PERSISTENCE_BACKEND:-memory}"
   DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://dndmap:dndmap_dev_password@postgres:5432/dndmap}"
   REDIS_URL: "${REDIS_URL:-redis://:dndmap_redis_dev_password@redis:6379/0}"
   S3_BUCKET: "${S3_BUCKET:-dnd-campaign-map}"
@@ -126,6 +140,7 @@ services:
         WEB_DIR: "${WEB_DIR:-apps/web}"
     restart: unless-stopped
     environment:
+      <<: *auth-environment
       APP_ENV: "${APP_ENV:-development}"
       NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}"
       INTERNAL_API_BASE_URL: "${INTERNAL_API_BASE_URL:-http://api:8000}"
