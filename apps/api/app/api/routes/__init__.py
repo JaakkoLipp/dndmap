@@ -1,6 +1,17 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, campaigns, exports, health, invites, layers, maps, objects, realtime
+from app.api.routes import (
+    auth,
+    campaigns,
+    exports,
+    health,
+    invites,
+    layers,
+    maps,
+    members,
+    objects,
+    realtime,
+)
 
 health_router = APIRouter()
 health_router.include_router(health.router)
@@ -14,4 +25,5 @@ api_router.include_router(layers.router)
 api_router.include_router(objects.router)
 api_router.include_router(exports.router)
 api_router.include_router(invites.router)
+api_router.include_router(members.router)
 api_router.include_router(realtime.router)

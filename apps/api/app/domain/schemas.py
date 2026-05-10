@@ -710,3 +710,18 @@ class CampaignMemberRead(ApiModel):
     user_id: UUID
     role: str
     joined_at: datetime
+
+
+class CampaignMemberDetail(ApiModel):
+    """Members listing payload — joined with the user record for display."""
+
+    campaign_id: UUID
+    user_id: UUID
+    role: str
+    joined_at: datetime
+    display_name: str
+    avatar_url: str | None
+
+
+class CampaignMemberUpdate(ApiModel):
+    role: Literal["owner", "dm", "player", "viewer"]

@@ -180,6 +180,11 @@ export type CampaignMember = {
   joined_at: string;
 };
 
+export type CampaignMemberDetail = CampaignMember & {
+  display_name: string;
+  avatar_url: string | null;
+};
+
 export type Point = {
   x: number;
   y: number;
@@ -250,6 +255,7 @@ export const queryKeys = {
   campaigns: ["campaigns"] as const,
   campaign: (id: string) => ["campaigns", id] as const,
   campaignMe: (id: string) => ["campaigns", id, "me"] as const,
+  campaignMembers: (id: string) => ["campaigns", id, "members"] as const,
   campaignMaps: (id: string) => ["campaigns", id, "maps"] as const,
   map: (id: string) => ["maps", id] as const,
   mapLayers: (id: string) => ["maps", id, "layers"] as const,
@@ -397,6 +403,26 @@ export const api = {
         body: JSON.stringify(payload)
       }),
     delete: (id: string) => apiFetch<void>(`/objects/${id}`, { method: "DELETE" })
+  },
+  members: {
+    list: (campaignId: string) =>
+      apiFetch<CampaignMemberDetail[]>(`/campaigns/${campaignId}/members`),
+    updateRole: (
+      campaignId: string,
+      userId: string,
+      role: CampaignMember["role"]
+    ) =>
+      apiFetch<CampaignMemberDetail>(
+        `/campaigns/${campaignId}/members/${userId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ role })
+        }
+      ),
+    remove: (campaignId: string, userId: string) =>
+      apiFetch<void>(`/campaigns/${campaignId}/members/${userId}`, {
+        method: "DELETE"
+      })
   },
   invites: {
     create: (
