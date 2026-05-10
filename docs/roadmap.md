@@ -42,6 +42,43 @@ Done when private campaigns are only visible and editable by authorized users.
 
 Done when realtime updates and export jobs work reliably across more than one API process.
 
+### Recommended Milestone 5 Slice
+
+Build this milestone as a sequence of small, reviewable slices:
+
+1. **Realtime contract hardening**
+   - Authenticate WebSocket connections with the same cookie used by REST routes.
+   - Reject users who are not campaign members.
+   - Standardize outbound events as `id`, `type`, `map_id`, `actor`, `payload`, and `sent_at`.
+   - Keep REST mutations authoritative; WebSockets should broadcast presence, locks, and "data changed" notifications.
+
+2. **Redis pub/sub fanout**
+   - Add a realtime broker abstraction with an in-memory implementation for tests and Redis implementation for hosted mode.
+   - Publish map events to channels keyed by `map_id`.
+   - Subscribe each connected socket to the relevant map channel.
+   - Preserve the current single-process behavior when Redis is not configured.
+
+3. **Presence**
+   - Send `map.connected`, `presence.joined`, `presence.left`, and `presence.snapshot`.
+   - Include display name, avatar URL when available, campaign role, and a per-tab client ID.
+   - Show online collaborators in the hosted editor toolbar.
+
+4. **Hosted editor realtime client**
+   - Connect from `app/campaigns/[id]/maps/[mapId]`.
+   - Broadcast after successful REST saves, image uploads, object deletes, and layer changes.
+   - On remote events, invalidate TanStack Query keys for map metadata, layers, and objects.
+   - Do not push direct object writes over WebSocket until conflict handling and revision history are in place.
+
+5. **Object locks**
+   - Lock objects during drag/edit operations.
+   - Store locks in Redis with short TTLs.
+   - Prevent conflicting edits in the UI and show who owns a lock.
+
+6. **Revision history and server-side exports**
+   - Add a linear Alembic migration for `map_revisions`.
+   - Write revisions for map image, layer, and object mutations.
+   - Move PNG/PDF exports into background jobs, store artifacts in S3/MinIO, and return presigned download URLs.
+
 ## Milestone 6: Hosted Operations
 
 1. Add deployment smoke tests, migration runbooks, backup restore checks, and release rollback notes.

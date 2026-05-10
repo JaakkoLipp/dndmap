@@ -2,7 +2,7 @@
 
 Greenfield implementation for a D&D campaign map web UI.
 
-The application is a Python FastAPI API plus a Next.js web app. The repository already includes Docker scaffolding for Postgres, Redis, and S3-compatible object storage through MinIO, but the current product slice still uses in-memory and browser-local behavior in the app code.
+The application is a Python FastAPI API plus a Next.js web app. The repository includes Docker scaffolding for Postgres, Redis, and S3-compatible object storage through MinIO. The backend now supports Postgres persistence, OAuth/RBAC, invites, and durable map image upload; the frontend has the first hosted campaign/auth routes while the editor is still the original SVG implementation.
 
 ## Current Status
 
@@ -11,16 +11,29 @@ Current capabilities:
 - Local map editor with image loading, pan/zoom, category-aware known locations, labels, routes, and freehand trails.
 - DM/player visibility controls for map notes in the editor.
 - Browser-side PNG and PDF export of the current map view, plus full-map PNG export.
-- FastAPI resource scaffold for campaigns, maps, layers, objects, export jobs, health checks, and map WebSocket broadcasts.
+- FastAPI resources for campaigns, maps, layers, objects, export jobs, health checks, OAuth, invites, and map WebSocket broadcasts.
+- Postgres-backed persistence with Alembic migrations and local seed/reset commands.
+- S3/MinIO-backed map image upload with presigned image URLs on map reads.
+- Hosted frontend shell for login, campaigns, campaign detail, invites, and persisted map editor routes.
 - Docker Compose services for the API, web app, Postgres, Redis, MinIO, and nginx reverse proxy.
 
 Planned complete hosted mode:
 
-- OAuth sign-in, organization/campaign membership, and GM/player/viewer permissions.
-- Postgres-backed durable campaign data and migrations.
-- S3-compatible asset storage for map images, uploads, thumbnails, and export artifacts.
+- React Konva editor rewrite and richer layer controls.
+- S3-compatible storage for thumbnails and export artifacts.
 - Redis-backed sessions, presence, pub/sub, rate limits, and background job coordination.
 - Production runbooks for backups, deploys, migrations, observability, and hosted environment rotation.
+
+## Next Product Slice
+
+The next implementation pass should focus on making hosted maps feel genuinely multi-user before expanding the drawing surface:
+
+1. Harden `WS /api/v1/ws/campaigns/{campaign_id}/maps/{map_id}` with auth, membership checks, and a stable realtime event envelope.
+2. Move WebSocket fanout to Redis pub/sub while keeping the in-memory path for tests and local single-process development.
+3. Add presence events and a hosted-editor presence indicator so DMs and players can see who is viewing a map.
+4. Broadcast map/object/layer invalidation events after REST persistence succeeds, then have other open editors refetch through TanStack Query.
+5. Add Redis-backed object locks and revision history before sending direct object mutation payloads over WebSocket.
+6. Finish Discord OAuth production setup docs and smoke tests with real redirect URIs.
 
 ## Quick Start
 

@@ -4,7 +4,7 @@ x-auth-environment: &auth-environment
   PUBLIC_SITE_URL: "${PUBLIC_SITE_URL:-http://localhost:3000}"
   AUTH_ENABLED: "${AUTH_ENABLED:-false}"
   AUTH_OAUTH_PROVIDERS: "${AUTH_OAUTH_PROVIDERS:-discord,google,github}"
-  OAUTH_REDIRECT_BASE_URL: "${OAUTH_REDIRECT_BASE_URL:-http://localhost:3000/api/auth/callback}"
+  OAUTH_REDIRECT_BASE_URL: "${OAUTH_REDIRECT_BASE_URL:-http://localhost:8080/api/v1/auth}"
   OAUTH_DISCORD_CLIENT_ID: "${OAUTH_DISCORD_CLIENT_ID:-}"
   OAUTH_DISCORD_CLIENT_SECRET: "${OAUTH_DISCORD_CLIENT_SECRET:-}"
   OAUTH_GOOGLE_CLIENT_ID: "${OAUTH_GOOGLE_CLIENT_ID:-}"
@@ -16,7 +16,7 @@ x-api-environment: &api-environment
   <<: *auth-environment
   APP_ENV: "${APP_ENV:-development}"
   PERSISTENCE_BACKEND: "${PERSISTENCE_BACKEND:-memory}"
-  DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://dndmap:dndmap_dev_password@postgres:5432/dndmap}"
+  DATABASE_URL: "${DATABASE_URL:-postgresql+asyncpg://dndmap:dndmap_dev_password@postgres:5432/dndmap}"
   REDIS_URL: "${REDIS_URL:-redis://:dndmap_redis_dev_password@redis:6379/0}"
   S3_BUCKET: "${S3_BUCKET:-dnd-campaign-map}"
   S3_REGION: "${S3_REGION:-us-east-1}"
@@ -26,6 +26,7 @@ x-api-environment: &api-environment
   S3_PUBLIC_ENDPOINT_URL: "${S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}"
   S3_FORCE_PATH_STYLE: "${S3_FORCE_PATH_STYLE:-true}"
   SESSION_SECRET: "${SESSION_SECRET:-replace-with-at-least-32-random-characters}"
+  JWT_SECRET: "${JWT_SECRET:-replace-with-at-least-32-random-characters-for-jwt}"
   CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-http://localhost:3000,http://localhost:8080}"
 
 services:

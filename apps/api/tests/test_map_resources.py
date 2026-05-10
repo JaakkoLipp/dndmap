@@ -1,4 +1,25 @@
+from io import BytesIO
+from uuid import uuid4
+
 import pytest
+from PIL import Image
+
+
+class FakeStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, tuple[bytes, str]] = {}
+
+    def put_object(self, *, key: str, body: bytes, content_type: str) -> None:
+        self.objects[key] = (body, content_type)
+
+    def presigned_get_url(self, key: str, *, expires_in: int = 3600) -> str | None:
+        return f"https://assets.example.test/{key}?signed=1"
+
+
+def make_png_bytes(width: int = 4, height: int = 3) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), "#123456").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def create_campaign(client) -> dict:
@@ -131,6 +152,85 @@ def test_map_image_metadata_round_trips(client):
     assert updated.status_code == 200
     assert updated.json()["image_url"] is None
     assert updated.json()["image_name"] == "moonwell-v2.png"
+
+
+def test_map_image_upload_stores_object_and_returns_presigned_url(client):
+    storage = FakeStorage()
+    client.app.state.storage = storage
+    campaign = create_campaign(client)
+    campaign_map = create_map(client, campaign["id"])
+
+    response = client.post(
+        f"/api/v1/maps/{campaign_map['id']}/image",
+        files={"file": ("moonwell.png", make_png_bytes(7, 5), "image/png")},
+    )
+
+    assert response.status_code == 200
+    uploaded_map = response.json()
+    assert uploaded_map["width"] == 7
+    assert uploaded_map["height"] == 5
+    assert uploaded_map["image_name"] == "moonwell.png"
+    assert uploaded_map["image_content_type"] == "image/png"
+    assert uploaded_map["image_object_key"].startswith(f"maps/{campaign_map['id']}/")
+    assert uploaded_map["image_url"].endswith("?signed=1")
+    assert uploaded_map["image_object_key"] in storage.objects
+    assert storage.objects[uploaded_map["image_object_key"]][1] == "image/png"
+
+
+def test_map_image_upload_rejects_non_image(client):
+    client.app.state.storage = FakeStorage()
+    campaign = create_campaign(client)
+    campaign_map = create_map(client, campaign["id"])
+
+    response = client.post(
+        f"/api/v1/maps/{campaign_map['id']}/image",
+        files={"file": ("notes.txt", b"not an image", "text/plain")},
+    )
+
+    assert response.status_code == 415
+
+
+def test_map_image_upload_missing_map_returns_404(client):
+    client.app.state.storage = FakeStorage()
+
+    response = client.post(
+        f"/api/v1/maps/{uuid4()}/image",
+        files={"file": ("moonwell.png", make_png_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 404
+
+
+def test_map_read_presigns_existing_image_object_key(client):
+    client.app.state.storage = FakeStorage()
+    campaign = create_campaign(client)
+
+    created = client.post(
+        f"/api/v1/campaigns/{campaign['id']}/maps",
+        json={
+            "name": "Moonwell",
+            "width": 1200,
+            "height": 900,
+            "imageObjectKey": "maps/moonwell.png",
+        },
+    )
+    assert created.status_code == 201
+    campaign_map = created.json()
+    assert campaign_map["image_url"] == (
+        "https://assets.example.test/maps/moonwell.png?signed=1"
+    )
+
+    read = client.get(f"/api/v1/maps/{campaign_map['id']}")
+    assert read.status_code == 200
+    assert read.json()["image_url"] == (
+        "https://assets.example.test/maps/moonwell.png?signed=1"
+    )
+
+    listed = client.get(f"/api/v1/campaigns/{campaign['id']}/maps")
+    assert listed.status_code == 200
+    assert listed.json()[0]["image_url"] == (
+        "https://assets.example.test/maps/moonwell.png?signed=1"
+    )
 
 
 def test_layer_audience_visibility_and_filters(client):

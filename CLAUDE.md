@@ -7,7 +7,7 @@ Self-hosted D&D campaign map app. Monorepo with:
 - `apps/web/` — Next.js 15 / React 19 TypeScript frontend
 - `infra/` — Docker Compose, nginx config, Dockerfiles
 
-Milestone 2 (Postgres persistence) and Milestone 4 backend (OAuth + RBAC + invites) are **complete**. The remaining work is the **frontend** — Tracks C (Konva canvas rewrite) and D (auth pages + TanStack Query). See `TODO.md` for the full checklist and `docs/roadmap.md` for milestone definitions.
+Milestone 2 (Postgres persistence), Milestone 3 map image upload, and Milestone 4 backend (OAuth + RBAC + invites) are **complete**. The frontend hosted shell for auth, campaigns, invites, and persisted editor routes is started; the remaining large frontend refactor is Track C (Konva canvas rewrite). See `TODO.md` for the full checklist and `docs/roadmap.md` for milestone definitions.
 
 ## Backend (`apps/api/`)
 
@@ -79,7 +79,7 @@ alembic/           # Alembic migrations
 
 ## Frontend (`apps/web/`)
 
-> **Current state**: The frontend has not been touched for Milestone 4. It contains the original SVG-based map editor (`components/MapEditor.tsx`, ~1500 lines) with no auth, no campaign pages, and no API client. Tracks C and D below are **not yet implemented** — the file layouts describe the target, not the current state.
+> **Current state**: The frontend has TanStack Query, auth providers, login/campaign/invite routes, and a hosted map editor route wired to backend maps, layers, objects, and image upload. It still contains the original SVG-based map editor; Track C below is the target Konva rewrite.
 
 ### Track C — Konva canvas rewrite (not started)
 
@@ -98,26 +98,17 @@ Replace the SVG editor with React Konva. New packages needed: `react-konva`, `ko
 - `app/page.tsx` — load MapEditor via `dynamic(..., { ssr: false })`
 - `lib/pdfExport.ts` — replace Canvas2D with `stage.toCanvas({ pixelRatio: 2 })`
 
-### Track D — Auth + routing (not started)
+### Track D — Auth + routing (started)
 
 Wire frontend to the backend auth system. New packages needed: `@tanstack/react-query@^5`.
 
-**Files to create:**
+Implemented baseline:
 - `lib/api.ts` — `apiFetch<T>()` with `credentials: "include"`, typed `api.*` wrappers
-- `components/providers/QueryProvider.tsx` — TanStack `QueryClientProvider`
-- `components/providers/AuthProvider.tsx` — `useQuery` for `/auth/me`, exposes `useAuth()`
-- `app/login/page.tsx` — OAuth buttons linking to `/api/v1/auth/{provider}/login`
-- `middleware.ts` — redirect unauthenticated requests to `/login`
-- `app/campaigns/page.tsx` — campaign list with TanStack Query
-- `app/campaigns/[id]/page.tsx` — campaign detail + invite management (DM only)
-- `app/invite/[code]/page.tsx` — accept invite page
-- `app/campaigns/[id]/maps/[mapId]/page.tsx` — map editor route
-
-**Files to modify:**
-- `app/layout.tsx` — wrap with `QueryProvider` + `AuthProvider`
-
-**Files to delete:**
-- `app/api/campaigns/route.ts` — replaced by direct API calls via `lib/api.ts`
+- `components/providers/QueryProvider.tsx` and `AuthProvider.tsx`
+- `app/login/page.tsx`, `app/campaigns/page.tsx`, `app/campaigns/[id]/page.tsx`, `app/invite/[code]/page.tsx`
+- `app/campaigns/[id]/maps/[mapId]/page.tsx` with hosted SVG editor persistence
+- `middleware.ts` for auth-cookie protected campaign/invite routes
+- `app/api/campaigns/route.ts` removed in favor of direct API calls
 
 ### Key conventions (target state)
 - `"use client"` required on all Konva components and components using hooks

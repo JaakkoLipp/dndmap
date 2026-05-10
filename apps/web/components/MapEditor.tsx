@@ -39,10 +39,8 @@ import type {
   MapObject,
   MapObjectCategory,
   PathObject,
-  PersistedIds,
   Point
-} from "../lib/campaignApi";
-import { saveCampaignDraft } from "../lib/campaignApi";
+} from "../lib/api";
 import { downloadCanvasAsPdf } from "../lib/pdfExport";
 
 type Tool = "select" | "pan" | "marker" | "label" | "line" | "freehand";
@@ -84,10 +82,21 @@ type EditableObjectUpdates = Partial<{
   strokeWidth: number;
 }>;
 
+type MapEditorProps = {
+  initialTitle?: string;
+  initialImage?: MapImageState | null;
+  initialObjects?: MapObject[];
+  onSave?: (snapshot: CampaignMapSnapshot) => Promise<void>;
+  onUploadImage?: (file: File) => Promise<void>;
+  saveLabel?: string;
+};
+
 const DEFAULT_WORLD = {
   width: 1600,
   height: 1000
 };
+
+const EMPTY_MAP_OBJECTS: MapObject[] = [];
 
 const CATEGORY_ORDER: MapObjectCategory[] = [
   "settlement",
@@ -103,13 +112,13 @@ const CATEGORY_META: Record<
   MapObjectCategory,
   { label: string; shortLabel: string; color: string }
 > = {
-  settlement: { label: "Settlement", shortLabel: "S", color: "#c9964b" },
-  dungeon: { label: "Dungeon", shortLabel: "D", color: "#8e8372" },
-  danger: { label: "Danger", shortLabel: "!", color: "#c95f55" },
-  quest: { label: "Quest", shortLabel: "Q", color: "#5f9ead" },
-  faction: { label: "Faction", shortLabel: "F", color: "#9a78a8" },
-  route: { label: "Route", shortLabel: "R", color: "#6f9d78" },
-  rumor: { label: "Rumor", shortLabel: "?", color: "#d7d0bb" }
+  settlement: { label: "Settlement", shortLabel: "S", color: "#f6c177" },
+  dungeon: { label: "Dungeon", shortLabel: "D", color: "#a78bfa" },
+  danger: { label: "Danger", shortLabel: "!", color: "#fb7185" },
+  quest: { label: "Quest", shortLabel: "Q", color: "#67e8f9" },
+  faction: { label: "Faction", shortLabel: "F", color: "#c084fc" },
+  route: { label: "Route", shortLabel: "R", color: "#5eead4" },
+  rumor: { label: "Rumor", shortLabel: "?", color: "#e0e7ff" }
 };
 
 const OBJECT_COLORS = CATEGORY_ORDER.map(
@@ -219,9 +228,9 @@ function drawGridBackground(
   width: number,
   height: number
 ) {
-  context.fillStyle = "#1b211b";
+  context.fillStyle = "#10172f";
   context.fillRect(0, 0, width, height);
-  context.strokeStyle = "rgba(215, 208, 187, 0.13)";
+  context.strokeStyle = "rgba(167, 139, 250, 0.14)";
   context.lineWidth = 1;
 
   for (let x = 0; x <= width; x += 80) {
@@ -252,7 +261,7 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
 
   if (object.type === "marker") {
     context.fillStyle = object.color;
-    context.strokeStyle = "#fff5dc";
+    context.strokeStyle = "#f5f2ff";
     context.lineWidth = 4;
     context.beginPath();
     context.arc(object.x, object.y, object.radius, 0, Math.PI * 2);
@@ -264,7 +273,7 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
     context.textBaseline = "middle";
     context.lineWidth = 3;
     context.strokeStyle = "rgba(19, 18, 14, 0.78)";
-    context.fillStyle = "#fff5dc";
+    context.fillStyle = "#f5f2ff";
     context.strokeText(category.shortLabel, object.x, object.y + 1);
     context.fillText(category.shortLabel, object.x, object.y + 1);
 
@@ -273,7 +282,7 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
     context.textBaseline = "alphabetic";
     context.lineWidth = 5;
     context.strokeStyle = "rgba(19, 18, 14, 0.82)";
-    context.fillStyle = "#fff5dc";
+    context.fillStyle = "#f5f2ff";
     context.strokeText(object.name, object.x + object.radius + 8, object.y + 6);
     context.fillText(object.name, object.x + object.radius + 8, object.y + 6);
   }
@@ -304,15 +313,22 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
   context.restore();
 }
 
-export function MapEditor() {
+export function MapEditor({
+  initialTitle = "Blackfen Campaign",
+  initialImage = null,
+  initialObjects = EMPTY_MAP_OBJECTS,
+  onSave,
+  onUploadImage,
+  saveLabel = "Save"
+}: MapEditorProps = {}) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  const persistedIdsRef = useRef<PersistedIds | null>(null);
-  const [title, setTitle] = useState("Blackfen Campaign");
-  const [image, setImage] = useState<MapImageState | null>(null);
-  const [objects, setObjects] = useState<MapObject[]>([]);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const [title, setTitle] = useState(initialTitle);
+  const [image, setImage] = useState<MapImageState | null>(initialImage);
+  const [objects, setObjects] = useState<MapObject[]>(initialObjects);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
   const [activeCategory, setActiveCategory] =
@@ -320,6 +336,50 @@ export function MapEditor() {
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, scale: 1 });
   const [draftPath, setDraftPath] = useState<DraftPath | null>(null);
   const [status, setStatus] = useState("Ready");
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setTitle(initialTitle);
+  }, [initialTitle]);
+
+  useEffect(() => {
+    setImage(initialImage);
+  }, [initialImage]);
+
+  useEffect(() => {
+    setObjects(initialObjects);
+    setSelectedId(null);
+  }, [initialObjects]);
+
+  useEffect(() => {
+    if (!exportMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (exportMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+
+      setExportMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExportMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [exportMenuOpen]);
 
   const worldSize = useMemo(
     () => ({
@@ -390,9 +450,20 @@ export function MapEditor() {
     return () => observer.disconnect();
   }, [fitToViewport]);
 
-  const handleImageFile = useCallback((file: File) => {
+  const handleImageFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
       setStatus("Choose an image file");
+      return;
+    }
+
+    if (onUploadImage) {
+      setStatus(`Uploading ${file.name}`);
+      try {
+        await onUploadImage(file);
+        setStatus(`Uploaded ${file.name}`);
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Upload failed");
+      }
       return;
     }
 
@@ -418,7 +489,7 @@ export function MapEditor() {
 
     reader.onerror = () => setStatus("Image could not be read");
     reader.readAsDataURL(file);
-  }, []);
+  }, [onUploadImage]);
 
   const addMarker = useCallback(
     (point: Point) => {
@@ -776,7 +847,7 @@ export function MapEditor() {
     }
 
     context.scale(pixelRatio, pixelRatio);
-    context.fillStyle = "#11150f";
+    context.fillStyle = "#080d1f";
     context.fillRect(0, 0, bounds.width, bounds.height);
     context.save();
     context.translate(view.x, view.y);
@@ -796,7 +867,7 @@ export function MapEditor() {
       return null;
     }
 
-    context.fillStyle = "#11150f";
+    context.fillStyle = "#080d1f";
     context.fillRect(0, 0, canvas.width, canvas.height);
     await drawMapSurface(context);
     return canvas;
@@ -859,21 +930,12 @@ export function MapEditor() {
 
     try {
       const snapshot = makeSnapshot(title, image, objects, view);
-      const result = await saveCampaignDraft(
-        snapshot,
-        persistedIdsRef.current ?? undefined
-      );
-      if (result.campaignId && result.mapId) {
-        persistedIdsRef.current = {
-          campaignId: result.campaignId,
-          mapId: result.mapId
-        };
+      if (onSave) {
+        await onSave(snapshot);
+        setStatus(`Saved ${new Date().toLocaleTimeString()}`);
+        return;
       }
-      setStatus(
-        result.savedAt
-          ? `Saved ${new Date(result.savedAt).toLocaleTimeString()}`
-          : "Saved"
-      );
+      setStatus("Local draft updated");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Save failed");
     }
@@ -967,7 +1029,7 @@ export function MapEditor() {
 
         <div className="toolbar" aria-label="Map tools">
           <button
-            className="tool-button"
+            className="tool-button map-option-button"
             onClick={() => fileInputRef.current?.click()}
             title="Load image"
             type="button"
@@ -1050,41 +1112,65 @@ export function MapEditor() {
             <Maximize2 size={18} />
           </button>
           <button
-            className="tool-button"
+            className="tool-button map-option-button"
             onClick={saveDraft}
             title="Save draft"
             type="button"
           >
             <Save size={18} />
-            <span>Save</span>
+            <span>{saveLabel}</span>
           </button>
-          <button
-            className="primary-button"
-            onClick={exportPng}
-            title="Export current view PNG"
-            type="button"
-          >
-            <Download size={18} />
-            <span>View PNG</span>
-          </button>
-          <button
-            className="primary-button"
-            onClick={exportPdf}
-            title="Export current view PDF"
-            type="button"
-          >
-            <FileText size={18} />
-            <span>View PDF</span>
-          </button>
-          <button
-            className="primary-button"
-            onClick={exportFullMapPng}
-            title="Export full map PNG"
-            type="button"
-          >
-            <Maximize2 size={18} />
-            <span>Full PNG</span>
-          </button>
+          <div className="export-menu" ref={exportMenuRef}>
+            <button
+              aria-label="Export options"
+              aria-expanded={exportMenuOpen}
+              aria-haspopup="menu"
+              className="tool-button map-option-button"
+              onClick={() => setExportMenuOpen((open) => !open)}
+              title="Export options"
+              type="button"
+            >
+              <Download size={18} />
+              <span>Export</span>
+            </button>
+            {exportMenuOpen ? (
+              <div className="export-menu-popover" role="menu">
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void exportPng();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Download size={16} />
+                  <span>View PNG</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void exportPdf();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <FileText size={16} />
+                  <span>View PDF</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void exportFullMapPng();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Maximize2 size={16} />
+                  <span>Full PNG</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -1516,7 +1602,7 @@ export function MapEditor() {
               {draftPath
                 ? renderPath(
                     draftPath,
-                    "#fff5dc",
+                    "#67e8f9",
                     draftPath.type === "line" ? 4 : 3,
                     "draft-path"
                   )

@@ -1,18 +1,18 @@
 # Developer Setup
 
-This project is scaffolded for a FastAPI API, a Next.js web UI, Postgres, Redis, and MinIO. The current iteration is a local-first product slice: the API uses in-memory storage, and the web draft save path is stubbed through the Next.js app. The Compose services are already present so the next iteration can move into durable hosted mode without reshaping the development workflow.
+This project is a FastAPI API, a Next.js web UI, Postgres, Redis, and MinIO. The backend supports both in-memory development and Postgres hosted mode, OAuth/RBAC, invites, and S3/MinIO map image uploads. The web app now has the first hosted campaign/auth routes; the map editor is still the original SVG implementation while the Konva rewrite remains future work.
 
 ## Current Capabilities
 
 - Web editor: load a local image, pan/zoom, add category-aware known locations, labels, routes, and freehand trails, edit map note properties, control DM/player visibility, and export the current view or full map.
-- API scaffold: health checks plus CRUD-style routes for campaigns, maps, layers, objects, export jobs, and map WebSocket broadcasts under `/api/v1`.
+- API: health checks plus routes for campaigns, maps, layers, objects, export jobs, OAuth, invites, map image upload, and map WebSocket broadcasts under `/api/v1`.
+- Hosted web shell: login, campaign list/detail, invite acceptance, and persisted map editor routes backed by TanStack Query.
 - Local infrastructure: Postgres, Redis, MinIO, and nginx are available through Compose.
 
 Current limitations:
 
-- Campaign and map API data is not durable; restarting the API clears the in-memory store.
-- Uploaded map images remain browser-local until the S3 upload flow is implemented.
-- Auth, user accounts, memberships, permissions, background export workers, and production migrations are planned work.
+- The root editor page can still run as a local standalone draft.
+- The React Konva canvas rewrite, richer layer picker, realtime client, background export workers, and production operations hardening are still planned work.
 
 ## Prerequisites
 
@@ -63,7 +63,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e .
-$env:DATABASE_URL = "postgresql+psycopg://dndmap:dndmap_dev_password@localhost:5432/dndmap"
+$env:DATABASE_URL = "postgresql+asyncpg://dndmap:dndmap_dev_password@localhost:5432/dndmap"
 $env:REDIS_URL = "redis://:dndmap_redis_dev_password@localhost:6379/0"
 $env:S3_ENDPOINT_URL = "http://localhost:9000"
 $env:S3_BUCKET = "dnd-campaign-map"
@@ -118,22 +118,17 @@ The app profile starts:
 - `web` on `http://localhost:3000`
 - `proxy` on `http://localhost:8080`
 
-## Auth and OAuth Plan
+## Auth and OAuth
 
-The current app has no authentication. Hosted mode is expected to add:
-
-- Discord OAuth as the primary campaign-group login provider.
-- Google OAuth for broad consumer/team login support.
-- GitHub OAuth for admin and contributor convenience.
-- Secure HTTP-only session cookies, CSRF protection for browser mutations, and per-campaign roles such as owner, GM, player, and viewer.
+Hosted mode includes Discord, Google, and GitHub OAuth routes, HTTP-only auth cookies, and campaign roles of owner, DM, player, and viewer. The frontend login page links directly to the backend provider login routes.
 
 Provider client IDs and secrets belong in `.env`; never expose secrets through `NEXT_PUBLIC_*` variables.
 
-## Persistence Plan
+## Persistence
 
-- Postgres is the source of truth for users, OAuth identities, campaigns, maps, layers, objects, memberships, export job metadata, and audit timestamps.
-- S3-compatible storage is used for uploaded map images, generated thumbnails, export files, and future import bundles. Local development uses MinIO with the same bucket contract.
-- Redis is used for session lookup/cache data, WebSocket presence, pub/sub fanout, job coordination, and rate limiting.
+- Postgres is the source of truth for users, OAuth identities, campaigns, maps, layers, objects, memberships, export job metadata, and audit timestamps when `PERSISTENCE_BACKEND=postgres`.
+- S3-compatible storage is used for uploaded map images. Local development uses MinIO with the same bucket contract.
+- Redis is planned for WebSocket presence, pub/sub fanout, job coordination, and rate limiting.
 - The API should keep the repository boundary intact so tests can continue using an in-memory adapter while hosted mode uses a Postgres-backed adapter.
 
 ## Reset Local Data

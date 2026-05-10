@@ -1,14 +1,30 @@
 """Tests for RBAC enforcement in API routes."""
+from io import BytesIO
 import types
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_campaign_member
 from app.db import models as orm
+
+
+class FakeStorage:
+    def put_object(self, *, key: str, body: bytes, content_type: str) -> None:
+        pass
+
+    def presigned_get_url(self, key: str, *, expires_in: int = 3600) -> str | None:
+        return f"https://assets.example.test/{key}?signed=1"
+
+
+def _png_bytes() -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (4, 3), "#123456").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 # --- Helpers ---
@@ -215,6 +231,48 @@ def test_dm_can_create_map(auth_client, test_user, mock_db):
         ).status_code
         == 201
     )
+
+
+def test_viewer_cannot_upload_map_image(auth_client, test_user, mock_db):
+    auth_client.app.state.storage = FakeStorage()
+    campaign = auth_client.post("/api/v1/campaigns", json={"name": "C"}).json()
+    campaign_id = uuid.UUID(campaign["id"])
+    member = _member(campaign_id, test_user.id, orm.CampaignRole.DM)
+    mock_db.execute.return_value.scalar_one_or_none.return_value = member
+
+    campaign_map = auth_client.post(
+        f"/api/v1/campaigns/{campaign_id}/maps",
+        json={"name": "Map", "width": 800, "height": 600},
+    ).json()
+
+    member.role = orm.CampaignRole.VIEWER
+    response = auth_client.post(
+        f"/api/v1/maps/{campaign_map['id']}/image",
+        files={"file": ("map.png", _png_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 403
+
+
+def test_player_cannot_upload_map_image(auth_client, test_user, mock_db):
+    auth_client.app.state.storage = FakeStorage()
+    campaign = auth_client.post("/api/v1/campaigns", json={"name": "C"}).json()
+    campaign_id = uuid.UUID(campaign["id"])
+    member = _member(campaign_id, test_user.id, orm.CampaignRole.DM)
+    mock_db.execute.return_value.scalar_one_or_none.return_value = member
+
+    campaign_map = auth_client.post(
+        f"/api/v1/campaigns/{campaign_id}/maps",
+        json={"name": "Map", "width": 800, "height": 600},
+    ).json()
+
+    member.role = orm.CampaignRole.PLAYER
+    response = auth_client.post(
+        f"/api/v1/maps/{campaign_map['id']}/image",
+        files={"file": ("map.png", _png_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 403
 
 
 def test_player_can_create_object(auth_client, test_user, mock_db):

@@ -59,6 +59,12 @@ POSTGRES_TEST_URL=postgresql+asyncpg://... pytest -m integration  # postgres
 - `AUTH_ENABLED=true`: routes that use `CurrentUser` return 401 without a valid `access_token` cookie. Routes that use `OptionalCurrentUser` work without auth but apply RBAC when a user is present.
 - JWT payload: `{"sub": user_id}`. Roles are **never** embedded in the token — they are queried from `campaign_members` per request.
 
+## Map image uploads
+
+- `POST /api/v1/maps/{map_id}/image` accepts multipart `image/*` uploads.
+- Uploaded images are stored in the configured S3-compatible bucket under `maps/{map_id}/...`.
+- `MapRead.image_url` is generated as a presigned download URL when `image_object_key` is present.
+
 ## OpenAPI docs
 
 `http://localhost:8000/docs` (direct) or `http://localhost:8080/api/v1/docs` (through nginx).

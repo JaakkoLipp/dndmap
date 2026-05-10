@@ -21,6 +21,8 @@ from app.domain.models import (
     utc_now,
 )
 
+DEV_OWNER_ID = UUID("00000000-0000-0000-0000-000000000000")
+
 
 def _to_campaign(row: orm.Campaign) -> Campaign:
     return Campaign(
@@ -135,6 +137,17 @@ class PostgresMapStore:
         owner_id: UUID | None = None,
     ) -> Campaign:
         async with self._session() as session:
+            if owner_id is None:
+                owner_id = DEV_OWNER_ID
+                if await session.get(orm.User, owner_id) is None:
+                    session.add(
+                        orm.User(
+                            id=owner_id,
+                            display_name="Local Dev",
+                            avatar_url=None,
+                        )
+                    )
+                    await session.flush()
             row = orm.Campaign(name=name, description=description, owner_id=owner_id)
             session.add(row)
             await session.commit()

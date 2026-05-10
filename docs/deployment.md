@@ -2,7 +2,7 @@
 
 The deployment scaffold is Docker Compose based. It is suitable for a single host or small private server running the FastAPI API, Next.js web app, Postgres, Redis, and MinIO together.
 
-This is not yet the complete hosted product mode. The current app slice can run behind the included proxy, but durable persistence, auth, migrations, and background processing are planned completion work before treating the stack as production-ready.
+This is not yet the complete hosted product mode. Durable persistence, OAuth/RBAC, migrations, invites, and map image upload are implemented; Redis realtime coordination, export workers, rate limits, and production operations hardening are still planned before treating the stack as production-ready.
 
 ## Server Prerequisites
 
@@ -34,7 +34,7 @@ At minimum, rotate:
 For production, set API container URLs to Docker-internal service names:
 
 ```dotenv
-DATABASE_URL=postgresql+psycopg://USER:PASSWORD@postgres:5432/DBNAME
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@postgres:5432/DBNAME
 REDIS_URL=redis://:PASSWORD@redis:6379/0
 S3_ENDPOINT_URL=http://minio:9000
 S3_PUBLIC_ENDPOINT_URL=https://files.example.com
@@ -45,7 +45,7 @@ Set hosted auth variables when OAuth is enabled:
 ```dotenv
 AUTH_ENABLED=true
 AUTH_OAUTH_PROVIDERS=discord,google,github
-OAUTH_REDIRECT_BASE_URL=https://maps.example.com/api/auth/callback
+OAUTH_REDIRECT_BASE_URL=https://maps.example.com/api/v1/auth
 OAUTH_DISCORD_CLIENT_ID=...
 OAUTH_DISCORD_CLIENT_SECRET=...
 OAUTH_GOOGLE_CLIENT_ID=...
@@ -54,7 +54,7 @@ OAUTH_GITHUB_CLIENT_ID=...
 OAUTH_GITHUB_CLIENT_SECRET=...
 ```
 
-The current code may ignore some hosted-mode variables until the matching product milestone lands. Keep the variables configured anyway so deployment, secret storage, and provider callback URLs can be tested early.
+Keep exact OAuth callback URLs registered with each provider, for example `https://maps.example.com/api/v1/auth/discord/callback`.
 
 ## Launch
 
@@ -73,10 +73,10 @@ Terminate TLS in front of this proxy, or replace it with your preferred ingress 
 
 ## Migrations
 
-Run database migrations from the API container after deploys once the Postgres repository is implemented. The exact command depends on the API implementation, for example:
+Run database migrations from the API container after deploys:
 
 ```bash
-docker compose --profile app exec api alembic upgrade head
+docker compose --profile app exec api dndmap-db migrate
 ```
 
 ## Backups
