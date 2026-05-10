@@ -26,7 +26,7 @@ body {
 }
 
 body {
-  background: linear-gradient(135deg, #11150f 0%, #191710 45%, #121611 100%);
+  background: linear-gradient(135deg, #10130f 0%, #171812 48%, #121712 100%);
   color: var(--text);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -35,7 +35,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -133,7 +135,9 @@ button {
 .primary-button:focus-visible,
 .danger-button:focus-visible,
 .icon-action:focus-visible,
-.object-main:focus-visible {
+.object-main:focus-visible,
+.category-select-label select:focus-visible,
+.visibility-toggle:focus-visible {
   box-shadow: 0 0 0 3px var(--focus);
 }
 
@@ -145,6 +149,35 @@ button {
   background: rgba(215, 155, 57, 0.18);
   border-color: rgba(215, 155, 57, 0.58);
   color: #ffe0a0;
+}
+
+.category-select-label {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  display: inline-flex;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 9px;
+}
+
+.category-select-label select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 800;
+  outline: none;
+  width: 112px;
+}
+
+.category-select-label option,
+.properties-form option {
+  background: #1a1f18;
+  color: var(--text);
 }
 
 .icon-only {
@@ -200,7 +233,8 @@ button {
 
 .properties-section {
   border-top: 1px solid var(--border);
-  max-height: 390px;
+  max-height: 480px;
+  overflow: auto;
 }
 
 .section-heading {
@@ -253,13 +287,17 @@ button {
   border-radius: 6px;
   display: grid;
   gap: 6px;
-  grid-template-columns: minmax(0, 1fr) 34px;
-  min-height: 44px;
+  grid-template-columns: minmax(0, 1fr) 34px 34px;
+  min-height: 52px;
 }
 
 .object-row.selected {
   background: rgba(215, 155, 57, 0.14);
   border-color: rgba(215, 155, 57, 0.58);
+}
+
+.object-row.muted {
+  opacity: 0.58;
 }
 
 .object-main {
@@ -270,24 +308,43 @@ button {
   cursor: pointer;
   display: grid;
   gap: 8px;
-  grid-template-columns: 10px 18px minmax(0, 1fr);
-  height: 42px;
+  grid-template-columns: 26px 18px minmax(0, 1fr);
+  min-height: 50px;
   min-width: 0;
   padding: 0 10px;
   text-align: left;
 }
 
-.object-main span:last-child {
+.object-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.object-copy span,
+.object-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.object-color {
-  border-radius: 999px;
-  display: block;
-  height: 10px;
-  width: 10px;
+.object-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.category-mark {
+  align-items: center;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
 }
 
 .icon-action {
@@ -295,6 +352,10 @@ button {
   min-height: 32px;
   padding: 0;
   width: 32px;
+}
+
+.muted-icon {
+  opacity: 0.42;
 }
 
 .properties-form {
@@ -315,18 +376,34 @@ button {
 }
 
 .properties-form input[type="text"],
-.properties-form input:not([type]) {
+.properties-form input:not([type]),
+.properties-form select,
+.properties-form textarea {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  height: 38px;
   outline: none;
   padding: 0 10px;
   width: 100%;
 }
 
-.properties-form input:focus {
+.properties-form input[type="text"],
+.properties-form input:not([type]),
+.properties-form select {
+  height: 38px;
+}
+
+.properties-form textarea {
+  line-height: 1.4;
+  min-height: 76px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.properties-form input:focus,
+.properties-form select:focus,
+.properties-form textarea:focus {
   border-color: rgba(215, 155, 57, 0.62);
   box-shadow: 0 0 0 3px var(--focus);
 }
@@ -352,6 +429,33 @@ button {
 .swatch[aria-pressed="true"] {
   border-color: #fff5dc;
   box-shadow: 0 0 0 3px var(--focus);
+}
+
+.visibility-controls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.visibility-toggle {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 7px;
+  justify-content: center;
+  min-height: 38px;
+  outline: none;
+  padding: 0 10px;
+}
+
+.visibility-toggle[aria-pressed="true"] {
+  background: rgba(111, 157, 120, 0.16);
+  border-color: rgba(111, 157, 120, 0.5);
+  color: #d7f0d3;
 }
 
 .stage-viewport {
@@ -419,17 +523,36 @@ button {
 .grid-map {
   align-items: center;
   background:
-    linear-gradient(90deg, rgba(215, 155, 57, 0.2) 1px, transparent 1px),
-    linear-gradient(rgba(215, 155, 57, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(215, 155, 57, 0.15) 1px, transparent 1px),
+    linear-gradient(rgba(215, 155, 57, 0.15) 1px, transparent 1px),
     #1b211b;
   background-size: 80px 80px, 80px 80px, auto;
-  border: 1px solid rgba(215, 155, 57, 0.28);
-  color: rgba(244, 236, 217, 0.72);
+  border: 1px solid rgba(215, 155, 57, 0.24);
+  color: rgba(244, 236, 217, 0.76);
   display: flex;
-  font-size: 34px;
-  font-weight: 900;
   justify-content: center;
+}
+
+.empty-map-lockup {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 18px 26px;
+}
+
+.empty-map-lockup span,
+.empty-map-lockup small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
   text-transform: uppercase;
+}
+
+.empty-map-lockup strong {
+  color: var(--text);
+  font-size: 30px;
+  letter-spacing: 0;
 }
 
 .map-overlay {
@@ -445,6 +568,7 @@ button {
   pointer-events: none;
 }
 
+.marker-glyph,
 .marker-label,
 .map-label {
   font-family:
@@ -454,6 +578,15 @@ button {
   pointer-events: none;
   stroke: rgba(19, 18, 14, 0.82);
   stroke-linejoin: round;
+}
+
+.marker-glyph {
+  dominant-baseline: middle;
+  fill: #21170b;
+  font-size: 12px;
+  pointer-events: none;
+  stroke: transparent;
+  text-anchor: middle;
 }
 
 .marker-label {
@@ -558,9 +691,13 @@ button {
 
   .sidebar {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(190px, auto);
   }
 
   .properties-section {
-    display: none;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    max-height: 220px;
   }
 }

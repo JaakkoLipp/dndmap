@@ -16,6 +16,7 @@ import {
   Save,
   Trash2,
   Type,
+  Users,
   Waypoints,
   ZoomIn,
   ZoomOut,
@@ -32,14 +33,15 @@ import type {
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent
 } from "react";
-import {
+import type {
   CampaignMapSnapshot,
   MapImageState,
   MapObject,
+  MapObjectCategory,
   PathObject,
-  Point,
-  saveCampaignDraft
+  Point
 } from "../lib/campaignApi";
+import { saveCampaignDraft } from "../lib/campaignApi";
 import { downloadCanvasAsPdf } from "../lib/pdfExport";
 
 type Tool = "select" | "pan" | "marker" | "label" | "line" | "freehand";
@@ -71,7 +73,10 @@ type DragState =
 type EditableObjectUpdates = Partial<{
   name: string;
   color: string;
-  visible: boolean;
+  category: MapObjectCategory;
+  dmVisible: boolean;
+  playerVisible: boolean;
+  notes: string;
   radius: number;
   text: string;
   fontSize: number;
@@ -83,15 +88,40 @@ const DEFAULT_WORLD = {
   height: 1000
 };
 
-const OBJECT_COLORS = ["#d79b39", "#74a86b", "#c95f55", "#6aa9b8", "#d7d0bb"];
+const CATEGORY_ORDER: MapObjectCategory[] = [
+  "settlement",
+  "dungeon",
+  "danger",
+  "quest",
+  "faction",
+  "route",
+  "rumor"
+];
+
+const CATEGORY_META: Record<
+  MapObjectCategory,
+  { label: string; shortLabel: string; color: string }
+> = {
+  settlement: { label: "Settlement", shortLabel: "S", color: "#c9964b" },
+  dungeon: { label: "Dungeon", shortLabel: "D", color: "#8e8372" },
+  danger: { label: "Danger", shortLabel: "!", color: "#c95f55" },
+  quest: { label: "Quest", shortLabel: "Q", color: "#5f9ead" },
+  faction: { label: "Faction", shortLabel: "F", color: "#9a78a8" },
+  route: { label: "Route", shortLabel: "R", color: "#6f9d78" },
+  rumor: { label: "Rumor", shortLabel: "?", color: "#d7d0bb" }
+};
+
+const OBJECT_COLORS = CATEGORY_ORDER.map(
+  (category) => CATEGORY_META[category].color
+);
 
 const TOOLS: Array<{ id: Tool; label: string; icon: LucideIcon }> = [
   { id: "select", label: "Select", icon: MousePointer2 },
   { id: "pan", label: "Pan", icon: Move },
-  { id: "marker", label: "Marker", icon: MapPin },
-  { id: "label", label: "Label", icon: Type },
-  { id: "line", label: "Line", icon: Waypoints },
-  { id: "freehand", label: "Path", icon: PenLine }
+  { id: "marker", label: "Location", icon: MapPin },
+  { id: "label", label: "Map Text", icon: Type },
+  { id: "line", label: "Route", icon: Waypoints },
+  { id: "freehand", label: "Trail", icon: PenLine }
 ];
 
 function clamp(value: number, min: number, max: number) {
@@ -104,6 +134,10 @@ function createId(prefix: string) {
   }
 
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getCategoryMeta(category: MapObjectCategory) {
+  return CATEGORY_META[category] ?? CATEGORY_META.rumor;
 }
 
 function getObjectDisplayName(object: MapObject) {
@@ -204,9 +238,11 @@ function drawGridBackground(
 }
 
 function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) {
-  if (!object.visible) {
+  if (!object.dmVisible) {
     return;
   }
+
+  const category = getCategoryMeta(object.category);
 
   context.save();
   context.lineCap = "round";
@@ -221,7 +257,18 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
     context.fill();
     context.stroke();
 
+    context.font = "800 13px Arial, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.lineWidth = 3;
+    context.strokeStyle = "rgba(19, 18, 14, 0.78)";
+    context.fillStyle = "#fff5dc";
+    context.strokeText(category.shortLabel, object.x, object.y + 1);
+    context.fillText(category.shortLabel, object.x, object.y + 1);
+
     context.font = "700 18px Arial, sans-serif";
+    context.textAlign = "left";
+    context.textBaseline = "alphabetic";
     context.lineWidth = 5;
     context.strokeStyle = "rgba(19, 18, 14, 0.82)";
     context.fillStyle = "#fff5dc";
@@ -244,6 +291,7 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
     if (firstPoint) {
       context.strokeStyle = object.color;
       context.lineWidth = object.strokeWidth;
+      context.setLineDash(object.category === "route" ? [18, 12] : []);
       context.beginPath();
       context.moveTo(firstPoint.x, firstPoint.y);
       rest.forEach((point) => context.lineTo(point.x, point.y));
@@ -264,6 +312,8 @@ export function MapEditor() {
   const [objects, setObjects] = useState<MapObject[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
+  const [activeCategory, setActiveCategory] =
+    useState<MapObjectCategory>("settlement");
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, scale: 1 });
   const [draftPath, setDraftPath] = useState<DraftPath | null>(null);
   const [status, setStatus] = useState("Ready");
@@ -277,7 +327,8 @@ export function MapEditor() {
   );
 
   const selectedObject = objects.find((object) => object.id === selectedId);
-  const visibleObjects = objects.filter((object) => object.visible);
+  const dmVisibleObjects = objects.filter((object) => object.dmVisible);
+  const playerVisibleObjects = objects.filter((object) => object.playerVisible);
 
   const screenToWorld = useCallback(
     (event: ReactPointerEvent) => {
@@ -368,47 +419,59 @@ export function MapEditor() {
 
   const addMarker = useCallback(
     (point: Point) => {
+      const category = activeCategory;
+      const categoryMeta = getCategoryMeta(category);
       const markerNumber =
-        objects.filter((object) => object.type === "marker").length + 1;
+        objects.filter(
+          (object) => object.type === "marker" && object.category === category
+        ).length + 1;
       const marker: MapObject = {
         id: createId("marker"),
         type: "marker",
-        name: `Marker ${markerNumber}`,
+        name: `${categoryMeta.label} ${markerNumber}`,
+        category,
         x: point.x,
         y: point.y,
         radius: 14,
-        color: OBJECT_COLORS[(objects.length + 1) % OBJECT_COLORS.length],
-        visible: true
+        color: categoryMeta.color,
+        dmVisible: true,
+        playerVisible: false,
+        notes: ""
       };
 
       setObjects((currentObjects) => [...currentObjects, marker]);
       setSelectedId(marker.id);
       setStatus(`Added ${marker.name}`);
     },
-    [objects]
+    [activeCategory, objects]
   );
 
   const addLabel = useCallback(
     (point: Point) => {
+      const category = activeCategory === "route" ? "rumor" : activeCategory;
+      const categoryMeta = getCategoryMeta(category);
       const labelNumber =
         objects.filter((object) => object.type === "label").length + 1;
       const label: MapObject = {
         id: createId("label"),
         type: "label",
-        name: `Label ${labelNumber}`,
-        text: `Label ${labelNumber}`,
+        name: `${categoryMeta.label} note ${labelNumber}`,
+        category,
+        text: `${categoryMeta.label} note ${labelNumber}`,
         x: point.x,
         y: point.y,
         fontSize: 28,
-        color: OBJECT_COLORS[(objects.length + 2) % OBJECT_COLORS.length],
-        visible: true
+        color: categoryMeta.color,
+        dmVisible: true,
+        playerVisible: false,
+        notes: ""
       };
 
       setObjects((currentObjects) => [...currentObjects, label]);
       setSelectedId(label.id);
       setStatus(`Added ${label.name}`);
     },
-    [objects]
+    [activeCategory, objects]
   );
 
   const addPathObject = useCallback(
@@ -434,11 +497,14 @@ export function MapEditor() {
       const nextPath: PathObject = {
         id: createId(path.type),
         type: path.type,
-        name: path.type === "line" ? `Line ${pathNumber}` : `Path ${pathNumber}`,
+        name: path.type === "line" ? `Route ${pathNumber}` : `Trail ${pathNumber}`,
+        category: "route",
         points: usefulPoints,
         strokeWidth: path.type === "line" ? 5 : 4,
-        color: OBJECT_COLORS[(objects.length + 3) % OBJECT_COLORS.length],
-        visible: true
+        color: CATEGORY_META.route.color,
+        dmVisible: true,
+        playerVisible: false,
+        notes: ""
       };
 
       setObjects((currentObjects) => [...currentObjects, nextPath]);
@@ -450,9 +516,27 @@ export function MapEditor() {
 
   const updateSelectedObject = useCallback((updates: EditableObjectUpdates) => {
     setObjects((currentObjects) =>
-      currentObjects.map((object) =>
-        object.id === selectedId ? ({ ...object, ...updates } as MapObject) : object
-      )
+      currentObjects.map((object) => {
+        if (object.id !== selectedId) {
+          return object;
+        }
+
+        const nextObject = { ...object, ...updates } as MapObject;
+
+        if (updates.category && !updates.color) {
+          nextObject.color = getCategoryMeta(updates.category).color;
+        }
+
+        if (updates.dmVisible === false) {
+          nextObject.playerVisible = false;
+        }
+
+        if (updates.playerVisible === true) {
+          nextObject.dmVisible = true;
+        }
+
+        return nextObject;
+      })
     );
   }, [selectedId]);
 
@@ -655,6 +739,20 @@ export function MapEditor() {
     });
   };
 
+  const drawMapSurface = useCallback(
+    async (context: CanvasRenderingContext2D) => {
+      if (image) {
+        const exportImage = await loadImageElement(image.src);
+        context.drawImage(exportImage, 0, 0, worldSize.width, worldSize.height);
+      } else {
+        drawGridBackground(context, worldSize.width, worldSize.height);
+      }
+
+      objects.forEach((object) => drawExportObject(context, object));
+    },
+    [image, objects, worldSize.height, worldSize.width]
+  );
+
   const renderViewportCanvas = useCallback(async () => {
     const bounds = viewportRef.current?.getBoundingClientRect();
 
@@ -678,26 +776,36 @@ export function MapEditor() {
     context.save();
     context.translate(view.x, view.y);
     context.scale(view.scale, view.scale);
-
-    if (image) {
-      const exportImage = await loadImageElement(image.src);
-      context.drawImage(exportImage, 0, 0, worldSize.width, worldSize.height);
-    } else {
-      drawGridBackground(context, worldSize.width, worldSize.height);
-    }
-
-    objects.forEach((object) => drawExportObject(context, object));
+    await drawMapSurface(context);
     context.restore();
     return canvas;
-  }, [
-    image,
-    objects,
-    view.scale,
-    view.x,
-    view.y,
-    worldSize.height,
-    worldSize.width
-  ]);
+  }, [drawMapSurface, view.scale, view.x, view.y]);
+
+  const renderFullMapCanvas = useCallback(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(worldSize.width));
+    canvas.height = Math.max(1, Math.floor(worldSize.height));
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return null;
+    }
+
+    context.fillStyle = "#11150f";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await drawMapSurface(context);
+    return canvas;
+  }, [drawMapSurface, worldSize.height, worldSize.width]);
+
+  const getExportBaseName = () =>
+    title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "map";
+
+  const downloadCanvasAsPng = (canvas: HTMLCanvasElement, filename: string) => {
+    const link = document.createElement("a");
+    link.href = canvas.toDataURL("image/png");
+    link.download = filename;
+    link.click();
+  };
 
   const exportPng = async () => {
     setStatus("Rendering PNG");
@@ -708,10 +816,7 @@ export function MapEditor() {
       return;
     }
 
-    const link = document.createElement("a");
-    link.href = canvas.toDataURL("image/png");
-    link.download = `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "map"}-view.png`;
-    link.click();
+    downloadCanvasAsPng(canvas, `${getExportBaseName()}-view.png`);
     setStatus("PNG exported");
   };
 
@@ -726,9 +831,22 @@ export function MapEditor() {
 
     downloadCanvasAsPdf(
       canvas,
-      `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "map"}-view.pdf`
+      `${getExportBaseName()}-view.pdf`
     );
     setStatus("PDF exported");
+  };
+
+  const exportFullMapPng = async () => {
+    setStatus("Rendering full map");
+    const canvas = await renderFullMapCanvas();
+
+    if (!canvas) {
+      setStatus("Full-map export is not available");
+      return;
+    }
+
+    downloadCanvasAsPng(canvas, `${getExportBaseName()}-full-map.png`);
+    setStatus("Full map PNG exported");
   };
 
   const saveDraft = async () => {
@@ -756,14 +874,42 @@ export function MapEditor() {
       currentObjects.filter((object) => object.id !== selectedId)
     );
     setSelectedId(null);
-    setStatus("Object removed");
+    setStatus("Map note removed");
   };
 
-  const toggleVisibility = (id: string) => {
+  const toggleDmVisibility = (id: string) => {
     setObjects((currentObjects) =>
-      currentObjects.map((object) =>
-        object.id === id ? { ...object, visible: !object.visible } : object
-      )
+      currentObjects.map((object) => {
+        if (object.id !== id) {
+          return object;
+        }
+
+        const dmVisible = !object.dmVisible;
+
+        return {
+          ...object,
+          dmVisible,
+          playerVisible: dmVisible ? object.playerVisible : false
+        };
+      })
+    );
+  };
+
+  const togglePlayerVisibility = (id: string) => {
+    setObjects((currentObjects) =>
+      currentObjects.map((object) => {
+        if (object.id !== id) {
+          return object;
+        }
+
+        const playerVisible = !object.playerVisible;
+
+        return {
+          ...object,
+          dmVisible: playerVisible ? true : object.dmVisible,
+          playerVisible
+        };
+      })
     );
   };
 
@@ -771,7 +917,8 @@ export function MapEditor() {
     object: PathObject | DraftPath,
     color: string,
     strokeWidth: number,
-    className?: string
+    className?: string,
+    dashArray?: string
   ) => {
     const points = object.points
       .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
@@ -785,6 +932,7 @@ export function MapEditor() {
         stroke={color}
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeDasharray={dashArray}
         strokeWidth={strokeWidth}
       />
     );
@@ -826,6 +974,23 @@ export function MapEditor() {
             }}
             type="file"
           />
+
+          <label className="category-select-label">
+            <MapPin size={16} />
+            <select
+              aria-label="New map note category"
+              onChange={(event) =>
+                setActiveCategory(event.target.value as MapObjectCategory)
+              }
+              value={activeCategory}
+            >
+              {CATEGORY_ORDER.map((category) => (
+                <option key={category} value={category}>
+                  {getCategoryMeta(category).label}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <div className="segmented-tools">
             {TOOLS.map(({ id, label, icon: Icon }) => (
@@ -882,40 +1047,53 @@ export function MapEditor() {
           <button
             className="primary-button"
             onClick={exportPng}
-            title="Export PNG"
+            title="Export current view PNG"
             type="button"
           >
             <Download size={18} />
-            <span>PNG</span>
+            <span>View PNG</span>
           </button>
           <button
             className="primary-button"
             onClick={exportPdf}
-            title="Export PDF"
+            title="Export current view PDF"
             type="button"
           >
             <FileText size={18} />
-            <span>PDF</span>
+            <span>View PDF</span>
+          </button>
+          <button
+            className="primary-button"
+            onClick={exportFullMapPng}
+            title="Export full map PNG"
+            type="button"
+          >
+            <Maximize2 size={18} />
+            <span>Full PNG</span>
           </button>
         </div>
       </header>
 
       <section className="workspace">
-        <aside className="sidebar" aria-label="Layers and properties">
+        <aside className="sidebar" aria-label="Known locations and map notes">
           <div className="sidebar-section">
             <div className="section-heading">
               <Layers3 size={17} />
-              <h2>Objects</h2>
-              <span>{visibleObjects.length}/{objects.length}</span>
+              <h2>Known Locations</h2>
+              <span>
+                {dmVisibleObjects.length}/{objects.length} DM
+              </span>
             </div>
 
             <div className="object-list">
               {objects.length === 0 ? (
-                <div className="empty-list">No objects</div>
+                <div className="empty-list">No known locations or notes</div>
               ) : (
                 [...objects].reverse().map((object) => (
                   <div
-                    className={`object-row ${selectedId === object.id ? "selected" : ""}`}
+                    className={`object-row ${
+                      selectedId === object.id ? "selected" : ""
+                    } ${!object.dmVisible ? "muted" : ""}`}
                     key={object.id}
                   >
                     <button
@@ -924,19 +1102,43 @@ export function MapEditor() {
                       type="button"
                     >
                       <span
-                        className="object-color"
-                        style={{ background: object.color }}
-                      />
+                        className="category-mark"
+                        style={{ color: object.color }}
+                      >
+                        {getCategoryMeta(object.category).shortLabel}
+                      </span>
                       {getObjectIcon(object.type)}
-                      <span>{getObjectDisplayName(object)}</span>
+                      <span className="object-copy">
+                        <span>{getObjectDisplayName(object)}</span>
+                        <small>{getCategoryMeta(object.category).label}</small>
+                      </span>
                     </button>
                     <button
                       className="icon-action"
-                      onClick={() => toggleVisibility(object.id)}
-                      title={object.visible ? "Hide" : "Show"}
+                      onClick={() => toggleDmVisibility(object.id)}
+                      title={
+                        object.dmVisible
+                          ? "Hide from DM map"
+                          : "Show on DM map"
+                      }
                       type="button"
                     >
-                      {object.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+                      {object.dmVisible ? <Eye size={16} /> : <EyeOff size={16} />}
+                    </button>
+                    <button
+                      className="icon-action"
+                      onClick={() => togglePlayerVisibility(object.id)}
+                      title={
+                        object.playerVisible
+                          ? "Hide from players"
+                          : "Show to players"
+                      }
+                      type="button"
+                    >
+                      <Users
+                        className={object.playerVisible ? undefined : "muted-icon"}
+                        size={16}
+                      />
                     </button>
                   </div>
                 ))
@@ -947,7 +1149,8 @@ export function MapEditor() {
           <div className="sidebar-section properties-section">
             <div className="section-heading">
               <Plus size={17} />
-              <h2>Properties</h2>
+              <h2>Map Note</h2>
+              <span>{playerVisibleObjects.length} shared</span>
             </div>
 
             {selectedObject ? (
@@ -962,6 +1165,24 @@ export function MapEditor() {
                   />
                 </label>
 
+                <label>
+                  <span>Category</span>
+                  <select
+                    onChange={(event) =>
+                      updateSelectedObject({
+                        category: event.target.value as MapObjectCategory
+                      })
+                    }
+                    value={selectedObject.category}
+                  >
+                    {CATEGORY_ORDER.map((category) => (
+                      <option key={category} value={category}>
+                        {getCategoryMeta(category).label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 {selectedObject.type === "label" ? (
                   <label>
                     <span>Text</span>
@@ -973,6 +1194,50 @@ export function MapEditor() {
                     />
                   </label>
                 ) : null}
+
+                <label>
+                  <span>Notes</span>
+                  <textarea
+                    onChange={(event) =>
+                      updateSelectedObject({ notes: event.target.value })
+                    }
+                    rows={3}
+                    value={selectedObject.notes}
+                  />
+                </label>
+
+                <div className="visibility-controls">
+                  <button
+                    aria-pressed={selectedObject.dmVisible}
+                    className="visibility-toggle"
+                    onClick={() =>
+                      updateSelectedObject({
+                        dmVisible: !selectedObject.dmVisible
+                      })
+                    }
+                    type="button"
+                  >
+                    {selectedObject.dmVisible ? (
+                      <Eye size={16} />
+                    ) : (
+                      <EyeOff size={16} />
+                    )}
+                    <span>DM map</span>
+                  </button>
+                  <button
+                    aria-pressed={selectedObject.playerVisible}
+                    className="visibility-toggle"
+                    onClick={() =>
+                      updateSelectedObject({
+                        playerVisible: !selectedObject.playerVisible
+                      })
+                    }
+                    type="button"
+                  >
+                    <Users size={16} />
+                    <span>Players</span>
+                  </button>
+                </div>
 
                 <label>
                   <span>Color</span>
@@ -1053,7 +1318,7 @@ export function MapEditor() {
                 </button>
               </div>
             ) : (
-              <div className="empty-list">Nothing selected</div>
+              <div className="empty-list">Select a location or note</div>
             )}
           </div>
         </aside>
@@ -1073,7 +1338,7 @@ export function MapEditor() {
           ref={viewportRef}
         >
           <div className="viewport-status">
-            <span>{image?.name ?? "Untitled map"}</span>
+            <span>{image?.name ?? "Untitled region map"}</span>
             <span>{status}</span>
           </div>
 
@@ -1094,7 +1359,11 @@ export function MapEditor() {
               />
             ) : (
               <div className="grid-map">
-                <span>Map image</span>
+                <div className="empty-map-lockup">
+                  <span>DM atlas</span>
+                  <strong>Uncharted region</strong>
+                  <small>Survey grid</small>
+                </div>
               </div>
             )}
 
@@ -1108,21 +1377,28 @@ export function MapEditor() {
               viewBox={`0 0 ${worldSize.width} ${worldSize.height}`}
               width={worldSize.width}
             >
-              <rect fill="transparent" height={worldSize.height} width={worldSize.width} />
+              <rect
+                fill="transparent"
+                height={worldSize.height}
+                width={worldSize.width}
+              />
 
               {objects.map((object) => {
-                if (!object.visible) {
+                if (!object.dmVisible) {
                   return null;
                 }
 
                 const isSelected = selectedId === object.id;
+                const category = getCategoryMeta(object.category);
 
                 if (object.type === "marker") {
                   return (
                     <g
                       className={`map-object ${isSelected ? "selected" : ""}`}
                       key={object.id}
-                      onPointerDown={(event) => handleObjectPointerDown(event, object)}
+                      onPointerDown={(event) =>
+                        handleObjectPointerDown(event, object)
+                      }
                     >
                       {isSelected ? (
                         <circle
@@ -1142,8 +1418,15 @@ export function MapEditor() {
                         className="marker-core"
                         cx={object.x}
                         cy={object.y}
-                        r={Math.max(4, object.radius * 0.32)}
+                        r={Math.max(7, object.radius * 0.48)}
                       />
+                      <text
+                        className="marker-glyph"
+                        x={object.x}
+                        y={object.y + 1}
+                      >
+                        {category.shortLabel}
+                      </text>
                       <text
                         className="marker-label"
                         x={object.x + object.radius + 8}
@@ -1160,13 +1443,18 @@ export function MapEditor() {
                     <g
                       className={`map-object ${isSelected ? "selected" : ""}`}
                       key={object.id}
-                      onPointerDown={(event) => handleObjectPointerDown(event, object)}
+                      onPointerDown={(event) =>
+                        handleObjectPointerDown(event, object)
+                      }
                     >
                       {isSelected ? (
                         <rect
                           className="label-selection"
                           height={object.fontSize + 12}
-                          width={Math.max(90, object.text.length * object.fontSize * 0.55)}
+                          width={Math.max(
+                            90,
+                            object.text.length * object.fontSize * 0.55
+                          )}
                           x={object.x - 8}
                           y={object.y - object.fontSize - 6}
                         />
@@ -1188,12 +1476,25 @@ export function MapEditor() {
                   <g
                     className={`map-object ${isSelected ? "selected" : ""}`}
                     key={object.id}
-                    onPointerDown={(event) => handleObjectPointerDown(event, object)}
+                    onPointerDown={(event) =>
+                      handleObjectPointerDown(event, object)
+                    }
                   >
                     {isSelected
-                      ? renderPath(object, "rgba(255, 245, 220, 0.9)", object.strokeWidth + 8, "selection-path")
+                      ? renderPath(
+                          object,
+                          "rgba(255, 245, 220, 0.9)",
+                          object.strokeWidth + 8,
+                          "selection-path"
+                        )
                       : null}
-                    {renderPath(object, object.color, object.strokeWidth)}
+                    {renderPath(
+                      object,
+                      object.color,
+                      object.strokeWidth,
+                      undefined,
+                      object.category === "route" ? "18 12" : undefined
+                    )}
                   </g>
                 );
               })}

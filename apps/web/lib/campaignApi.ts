@@ -10,11 +10,23 @@ export type MapImageState = {
   height: number;
 };
 
+export type MapObjectCategory =
+  | "settlement"
+  | "dungeon"
+  | "danger"
+  | "quest"
+  | "faction"
+  | "route"
+  | "rumor";
+
 type BaseMapObject = {
   id: string;
   name: string;
   color: string;
-  visible: boolean;
+  category: MapObjectCategory;
+  dmVisible: boolean;
+  playerVisible: boolean;
+  notes: string;
 };
 
 export type MarkerObject = BaseMapObject & {
