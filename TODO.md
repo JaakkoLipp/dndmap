@@ -2,13 +2,13 @@
 
 What is still needed to reach a complete hosted product.
 
-## Persistence (Milestone 2)
+## Persistence (Milestone 2) ✓
 
-- [ ] Add SQLAlchemy models for `User`, `OAuthIdentity`, `Campaign`, `CampaignMember`, `CampaignInvite`, `Map`, `MapLayer`, `MapObject`, `MapRevision`, `MapExport`
-- [ ] Write Alembic migration for the initial schema
-- [ ] Implement a Postgres-backed repository that satisfies the `MapDataStore` protocol
-- [ ] Switch `create_app` to select the Postgres repo when `DATABASE_URL` is set
-- [ ] Add seed and reset commands for local dev and CI
+- [x] Add SQLAlchemy models for `User`, `OAuthIdentity`, `Campaign`, `CampaignMember`, `CampaignInvite`, `CampaignMap`, `MapLayer`, `MapObjectRow`, `MapExport`
+- [x] Write Alembic migration for the initial schema (`alembic/versions/0001_initial_schema.py`)
+- [x] Implement a Postgres-backed repository (`app/repositories/postgres.py`) satisfying the async `MapDataStore` protocol
+- [x] Switch `create_app` to select the Postgres repo when `PERSISTENCE_BACKEND=postgres`
+- [x] Add `dndmap-db migrate / seed / reset` CLI commands
 - [ ] Wire map objects from the editor into the API save flow (currently only campaign + map metadata are persisted)
 
 ## Asset Storage (Milestone 3)
@@ -20,21 +20,34 @@ What is still needed to reach a complete hosted product.
 
 ## Auth & Permissions (Milestone 4)
 
-- [ ] Add `authlib`, `httpx`, `itsdangerous` to `apps/api/pyproject.toml`
-- [ ] Implement `GET /auth/{provider}/login` (redirect), `GET /auth/{provider}/callback` (token exchange + user upsert), `POST /auth/logout`, `GET /auth/me` for Discord, Google, and GitHub
-- [ ] Store sessions in HTTP-only cookies; add CSRF protection on state param
-- [ ] Enforce campaign roles (owner / GM / player / viewer) on all API routes
-- [ ] Implement invite link / code flow: `POST /campaigns/{id}/invites`, `POST /invites/{code}/accept`
-- [ ] Add a frontend login page and auth context; redirect unauthenticated users
-- [ ] Discord developer app: add redirect URI, set `OAUTH_DISCORD_CLIENT_ID` + `OAUTH_DISCORD_CLIENT_SECRET` in `.env`
-- [ ] Google and GitHub: same setup in their respective developer consoles
+### Backend ✓
+
+- [x] Add `sqlalchemy[asyncio]`, `asyncpg`, `python-jose`, `itsdangerous`, `httpx`, `respx` to `pyproject.toml`
+- [x] Implement `GET /auth/{provider}/login`, `GET /auth/{provider}/callback`, `POST /auth/logout`, `GET /auth/me` for Discord, Google, and GitHub
+- [x] Store JWT in HTTP-only cookie; OAuth state param signed with `itsdangerous`
+- [x] Enforce campaign roles (owner / dm / player / viewer) on all API routes
+- [x] Implement invite link flow: `POST /campaigns/{id}/invites`, `POST /invites/{code}/accept`
+- [x] Role-check and invite-acceptance unit tests (56 passing)
+
+### Frontend (not started)
+
+- [ ] Rewrite SVG map editor to React Konva (`MapCanvas.tsx`, `useMapState.ts`, `useMapViewport.ts`)
+- [ ] Add TanStack Query (`@tanstack/react-query@^5`) and typed API client (`lib/api.ts`)
+- [ ] Add `QueryProvider` + `AuthProvider` wrappers in `app/layout.tsx`
+- [ ] Add login page (`app/login/page.tsx`) with Discord / Google / GitHub OAuth buttons
+- [ ] Add `middleware.ts` to redirect unauthenticated users to `/login`
+- [ ] Add campaign list page (`app/campaigns/page.tsx`) with TanStack Query
+- [ ] Add campaign detail page (`app/campaigns/[id]/page.tsx`) with invite management (DM only)
+- [ ] Add invite acceptance page (`app/invite/[code]/page.tsx`)
+- [ ] Add map editor route (`app/campaigns/[id]/maps/[mapId]/page.tsx`)
+- [ ] Discord / Google / GitHub developer apps: configure redirect URIs and set credentials in `.env`
 
 ## Realtime & Jobs (Milestone 5)
 
 - [ ] Move WebSocket fanout onto Redis pub/sub so multiple API instances share broadcast state
 - [ ] Add presence indicators (who is connected to a map)
 - [ ] Implement object locking while a user is dragging
-- [ ] Add revision history writes on object mutation (`MapRevision` records)
+- [ ] Add revision history writes on object mutation
 - [ ] Implement export job workers that generate server-side PNG/PDF respecting DM/player visibility
 - [ ] Add rate limits on auth, upload, and mutation-heavy endpoints
 
@@ -44,11 +57,12 @@ What is still needed to reach a complete hosted product.
 - [ ] Add handout tool (linked image or text note on the map)
 - [ ] Wire layer model into the UI (layer picker, DM-only / player-visible / hidden states)
 - [ ] Implement realtime WebSocket client in the editor (connect, receive updates, optimistic writes)
-- [ ] Add player-visible export option (renders only `playerVisible` objects)
+- [ ] Add player-visible export option (renders only player-visible objects)
 
 ## Tests
 
-- [ ] Backend: role-check and invite-acceptance unit tests
+- [x] Backend: role-check unit tests (`test_rbac.py`)
+- [x] Backend: invite-acceptance unit tests (`test_invites.py`)
 - [ ] Backend: WebSocket rejection for unauthorized users and reconnect sync
 - [ ] Backend: export visibility tests (DM vs. player output)
 - [ ] Frontend: component tests for tool selection, layer toggles, permission-gated controls

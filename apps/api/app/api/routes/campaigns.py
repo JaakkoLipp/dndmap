@@ -3,39 +3,74 @@ from uuid import UUID
 from fastapi import APIRouter, Response, status
 
 from app.api.dependencies import StoreDependency, raise_not_found
+from app.auth.dependencies import OptionalCurrentUser, get_campaign_member
+from app.db import models as orm
+from app.db.session import OptionalDbSession
 from app.domain.schemas import CampaignCreate, CampaignRead, CampaignUpdate
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
 
 @router.get("", response_model=list[CampaignRead])
-def list_campaigns(store: StoreDependency) -> list:
-    return list(store.list_campaigns())
+async def list_campaigns(
+    store: StoreDependency,
+    user: OptionalCurrentUser,
+) -> list:
+    return await store.list_campaigns(user_id=user.id if user else None)
 
 
 @router.post("", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
-def create_campaign(payload: CampaignCreate, store: StoreDependency):
-    return store.create_campaign(
+async def create_campaign(
+    payload: CampaignCreate,
+    store: StoreDependency,
+    user: OptionalCurrentUser,
+    db: OptionalDbSession,
+):
+    campaign = await store.create_campaign(
         name=payload.name,
         description=payload.description,
+        owner_id=user.id if user else None,
     )
+    if user is not None and db is not None:
+        db.add(
+            orm.CampaignMember(
+                campaign_id=campaign.id,
+                user_id=user.id,
+                role=orm.CampaignRole.OWNER,
+            )
+        )
+        await db.commit()
+    return campaign
 
 
 @router.get("/{campaign_id}", response_model=CampaignRead)
-def read_campaign(campaign_id: UUID, store: StoreDependency):
-    campaign = store.get_campaign(campaign_id)
+async def read_campaign(
+    campaign_id: UUID,
+    store: StoreDependency,
+    user: OptionalCurrentUser,
+    db: OptionalDbSession,
+):
+    if user is not None:
+        assert db is not None
+        await get_campaign_member(campaign_id, user, db)
+    campaign = await store.get_campaign(campaign_id)
     if campaign is None:
         raise_not_found("Campaign")
     return campaign
 
 
 @router.patch("/{campaign_id}", response_model=CampaignRead)
-def update_campaign(
+async def update_campaign(
     campaign_id: UUID,
     payload: CampaignUpdate,
     store: StoreDependency,
+    user: OptionalCurrentUser,
+    db: OptionalDbSession,
 ):
-    campaign = store.update_campaign(
+    if user is not None:
+        assert db is not None
+        await get_campaign_member(campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
+    campaign = await store.update_campaign(
         campaign_id,
         payload.model_dump(exclude_unset=True),
     )
@@ -45,8 +80,15 @@ def update_campaign(
 
 
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_campaign(campaign_id: UUID, store: StoreDependency) -> Response:
-    if not store.delete_campaign(campaign_id):
+async def delete_campaign(
+    campaign_id: UUID,
+    store: StoreDependency,
+    user: OptionalCurrentUser,
+    db: OptionalDbSession,
+) -> Response:
+    if user is not None:
+        assert db is not None
+        await get_campaign_member(campaign_id, user, db, minimum_role=orm.CampaignRole.OWNER)
+    if not await store.delete_campaign(campaign_id):
         raise_not_found("Campaign")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

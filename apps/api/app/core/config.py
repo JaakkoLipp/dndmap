@@ -44,7 +44,7 @@ class Settings(BaseSettings):
             "CSRF_TRUSTED_ORIGINS",
         ),
     )
-    persistence_backend: Literal["memory"] = Field(
+    persistence_backend: Literal["memory", "postgres"] = Field(
         default="memory",
         validation_alias=AliasChoices(
             "DND_MAP_PERSISTENCE_BACKEND",
@@ -58,6 +58,71 @@ class Settings(BaseSettings):
     redis_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("DND_MAP_REDIS_URL", "REDIS_URL"),
+    )
+    auth_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("DND_MAP_AUTH_ENABLED", "AUTH_ENABLED"),
+    )
+    jwt_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("DND_MAP_JWT_SECRET", "JWT_SECRET"),
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        validation_alias=AliasChoices("DND_MAP_JWT_ALGORITHM", "JWT_ALGORITHM"),
+    )
+    jwt_expire_minutes: int = Field(
+        default=60 * 24 * 7,
+        validation_alias=AliasChoices("DND_MAP_JWT_EXPIRE_MINUTES", "JWT_EXPIRE_MINUTES"),
+    )
+    oauth_redirect_base_url: str = Field(
+        default="http://localhost:8080/api/v1/auth",
+        validation_alias=AliasChoices(
+            "DND_MAP_OAUTH_REDIRECT_BASE_URL",
+            "OAUTH_REDIRECT_BASE_URL",
+        ),
+    )
+    oauth_discord_client_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "DND_MAP_OAUTH_DISCORD_CLIENT_ID",
+            "OAUTH_DISCORD_CLIENT_ID",
+        ),
+    )
+    oauth_discord_client_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "DND_MAP_OAUTH_DISCORD_CLIENT_SECRET",
+            "OAUTH_DISCORD_CLIENT_SECRET",
+        ),
+    )
+    oauth_google_client_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "DND_MAP_OAUTH_GOOGLE_CLIENT_ID",
+            "OAUTH_GOOGLE_CLIENT_ID",
+        ),
+    )
+    oauth_google_client_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "DND_MAP_OAUTH_GOOGLE_CLIENT_SECRET",
+            "OAUTH_GOOGLE_CLIENT_SECRET",
+        ),
+    )
+    oauth_github_client_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "DND_MAP_OAUTH_GITHUB_CLIENT_ID",
+            "OAUTH_GITHUB_CLIENT_ID",
+        ),
+    )
+    oauth_github_client_secret: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "DND_MAP_OAUTH_GITHUB_CLIENT_SECRET",
+            "OAUTH_GITHUB_CLIENT_SECRET",
+        ),
     )
     s3_bucket: str | None = Field(
         default=None,

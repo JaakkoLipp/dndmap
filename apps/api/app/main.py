@@ -19,8 +19,25 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = resolved_settings
-        app.state.store = store or InMemoryMapStore()
+        if store is not None:
+            app.state.store = store
+        elif (
+            resolved_settings.persistence_backend == "postgres"
+            and resolved_settings.database_url
+        ):
+            from app.db.engine import make_engine, make_session_factory
+            from app.repositories.postgres import PostgresMapStore
+
+            engine = make_engine(resolved_settings.database_url)
+            factory = make_session_factory(engine)
+            app.state.engine = engine
+            app.state.session_factory = factory
+            app.state.store = PostgresMapStore(factory)
+        else:
+            app.state.store = InMemoryMapStore()
         yield
+        if hasattr(app.state, "engine"):
+            await app.state.engine.dispose()
 
     app = FastAPI(
         title=resolved_settings.app_name,
@@ -43,4 +60,3 @@ def create_app(
 
 
 app = create_app()
-

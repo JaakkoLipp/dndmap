@@ -676,3 +676,36 @@ class ExportJobRead(ApiModel):
     download_url: str | None
     requested_at: datetime
     completed_at: datetime | None
+
+
+# --- Auth schemas ---
+
+class UserRead(ApiModel):
+    id: UUID
+    display_name: str
+    avatar_url: str | None
+    created_at: datetime
+
+
+class InviteCreate(ApiModel):
+    role: str = Field(default="player", pattern=r"^(owner|dm|player|viewer)$")
+    max_uses: int | None = Field(default=None, gt=0)
+    expires_in_hours: int | None = Field(default=None, gt=0, le=720)
+
+
+class InviteRead(ApiModel):
+    id: UUID
+    campaign_id: UUID
+    code: str
+    role: str
+    max_uses: int | None
+    use_count: int
+    expires_at: datetime | None
+    created_at: datetime
+
+
+class CampaignMemberRead(ApiModel):
+    campaign_id: UUID
+    user_id: UUID
+    role: str
+    joined_at: datetime
