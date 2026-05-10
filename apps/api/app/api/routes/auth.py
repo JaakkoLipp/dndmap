@@ -49,19 +49,31 @@ async def oauth_login(
     request: Request,
     next: str | None = None,
 ) -> RedirectResponse:
+    """Begin an OAuth flow.
+
+    Misconfiguration is surfaced as a redirect back to ``/login?error=...``
+    rather than a raw HTTP error so the user sees an actionable message
+    instead of a blank browser page.
+    """
     settings: Settings = request.app.state.settings
+    safe_next = _safe_next(next)
+
     provider_adapter = get_provider(provider)
     if not provider_adapter:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown OAuth provider")
+        return _login_error_redirect(provider, "unknown_provider", safe_next)
 
     if not settings.session_secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="session_secret not configured")
+        return _login_error_redirect(provider, "session_secret_missing", safe_next)
 
-    client_id, _ = _get_provider_credentials(settings, provider)
+    try:
+        client_id, _ = _get_provider_credentials(settings, provider)
+    except HTTPException:
+        return _login_error_redirect(provider, "provider_not_configured", safe_next)
+
     nonce = secrets.token_urlsafe(16)
     state = sign_state(
         settings.session_secret,
-        {"n": nonce, "next": _safe_next(next)},
+        {"n": nonce, "next": safe_next},
     )
     redirect_uri = f"{settings.oauth_redirect_base_url}/{provider}/callback"
     url = provider_adapter.build_authorization_url(client_id, redirect_uri, state)

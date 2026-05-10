@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 import { AppHeader } from "../../../components/layout/AppHeader";
+import { MembersPanel } from "../../../components/campaign/MembersPanel";
 import { api, ApiError, queryKeys, type Invite } from "../../../lib/api";
 import {
   ROLE_LABEL,
@@ -178,6 +179,8 @@ export default function CampaignDetailPage() {
             )}
           </div>
         ) : null}
+
+        <MembersPanel campaignId={id} viewerRole={role} />
       </section>
     </main>
   );

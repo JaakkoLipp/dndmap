@@ -9,7 +9,7 @@ from app.db import models as orm
 from app.db.session import OptionalDbSession
 from app.domain.models import MapAudience
 from app.domain.schemas import MapObjectCreate, MapObjectRead, MapObjectUpdate
-from app.realtime import EventType, actor_from_user, publish_event
+from app.realtime import EventType, actor_from_user, publish_event, write_revision
 
 router = APIRouter(tags=["objects"])
 
@@ -66,15 +66,26 @@ async def create_object(
     if layer is None or layer.map_id != map_id:
         raise_not_found("Layer")
     map_object = await store.create_object(map_id=map_id, **payload.to_store_values())
+    event_payload = {
+        "object_id": str(map_object.id),
+        "layer_id": str(map_object.layer_id),
+        "kind": map_object.kind.value,
+        "name": map_object.name,
+    }
     await publish_event(
         request,
         map_id,
         EventType.OBJECT_CREATED,
         actor=actor_from_user(user),
-        payload={
-            "object_id": str(map_object.id),
-            "layer_id": str(map_object.layer_id),
-        },
+        payload=event_payload,
+    )
+    await write_revision(
+        db,
+        map_id=map_id,
+        event_type=EventType.OBJECT_CREATED,
+        actor=user,
+        summary=f"Created {map_object.kind.value} \"{map_object.name}\"",
+        payload=event_payload,
     )
     return map_object
 
@@ -132,15 +143,25 @@ async def update_object(
     updated = await store.update_object(object_id, changes)
     if updated is None:
         raise_not_found("Object")
+    event_payload = {
+        "object_id": str(object_id),
+        "layer_id": str(updated.layer_id),
+        "fields": sorted(changes.keys()),
+    }
     await publish_event(
         request,
         updated.map_id,
         EventType.OBJECT_UPDATED,
         actor=actor_from_user(user),
-        payload={
-            "object_id": str(object_id),
-            "layer_id": str(updated.layer_id),
-        },
+        payload=event_payload,
+    )
+    await write_revision(
+        db,
+        map_id=updated.map_id,
+        event_type=EventType.OBJECT_UPDATED,
+        actor=user,
+        summary=f"Updated \"{updated.name}\"",
+        payload=event_payload,
     )
     return updated
 
@@ -164,16 +185,27 @@ async def delete_object(
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     map_id = map_object.map_id
     layer_id = map_object.layer_id
+    object_name = map_object.name
     if not await store.delete_object(object_id):
         raise_not_found("Object")
+    event_payload = {
+        "object_id": str(object_id),
+        "layer_id": str(layer_id),
+        "name": object_name,
+    }
     await publish_event(
         request,
         map_id,
         EventType.OBJECT_DELETED,
         actor=actor_from_user(user),
-        payload={
-            "object_id": str(object_id),
-            "layer_id": str(layer_id),
-        },
+        payload=event_payload,
+    )
+    await write_revision(
+        db,
+        map_id=map_id,
+        event_type=EventType.OBJECT_DELETED,
+        actor=user,
+        summary=f"Deleted \"{object_name}\"",
+        payload=event_payload,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
