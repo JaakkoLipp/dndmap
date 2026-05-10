@@ -18,7 +18,10 @@ const OTHER_PROVIDERS: { id: ProviderId; label: string; Icon: typeof Github }[] 
 const ERROR_COPY: Record<string, string> = {
   invalid_state: "Your sign-in link expired. Please try again.",
   missing_state_or_code: "The sign-in link was incomplete. Please try again.",
-  provider_not_configured: "This provider isn't configured on the server.",
+  provider_not_configured:
+    "OAuth credentials for this provider are not configured on the server. Ask your admin to set OAUTH_DISCORD_CLIENT_ID / OAUTH_DISCORD_CLIENT_SECRET (or the matching variables for Google / GitHub).",
+  session_secret_missing:
+    "SESSION_SECRET is not configured on the server. Sign-in cannot proceed until it is set.",
   unknown_provider: "Unknown sign-in provider.",
   no_access_token: "The provider did not return an access token.",
   provider_error: "The provider rejected the sign-in. Please try again.",

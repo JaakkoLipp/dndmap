@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,8 +9,11 @@ from app.api.routes import api_router, health_router
 from app.core.config import Settings, get_settings
 from app.core.rate_limit import RateLimiter
 from app.realtime import ConnectionManager, build_broker
+from app.realtime.broker import InMemoryBroker
 from app.repositories.base import MapDataStore
 from app.repositories.in_memory import InMemoryMapStore
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
@@ -40,7 +44,17 @@ def create_app(
 
         manager = ConnectionManager()
         broker = build_broker(resolved_settings.redis_url, manager)
-        await broker.start()
+        try:
+            await broker.start()
+        except Exception:
+            # Don't crash the API just because Redis is unreachable or the
+            # client lib isn't installed. Fall back to single-process
+            # broadcasts so the rest of the stack stays available.
+            logger.exception(
+                "Realtime broker failed to start; falling back to in-memory broker"
+            )
+            broker = InMemoryBroker(manager)
+            await broker.start()
         app.state.realtime_manager = manager
         app.state.realtime_broker = broker
 
