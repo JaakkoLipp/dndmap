@@ -5,17 +5,19 @@ from pathlib import Path
 from uuid import UUID
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, status
 from starlette.concurrency import run_in_threadpool
 
 from PIL import Image, UnidentifiedImageError
 
 from app.api.dependencies import StorageDependency, StoreDependency, raise_not_found
 from app.auth.dependencies import OptionalCurrentUser, get_campaign_member
+from app.core.rate_limit import MutationRateLimit, UploadRateLimit
 from app.db import models as orm
 from app.db.session import OptionalDbSession
 from app.domain.models import CampaignMap
 from app.domain.schemas import MapCreate, MapRead, MapUpdate
+from app.realtime import EventType, actor_from_user, publish_event
 from app.storage import ObjectStorage, StorageConfigurationError
 
 router = APIRouter(tags=["maps"])
@@ -81,6 +83,7 @@ async def create_map(
     storage: StorageDependency,
     user: OptionalCurrentUser,
     db: OptionalDbSession,
+    _limit: MutationRateLimit = None,
 ):
     if user is not None:
         assert db is not None
@@ -112,10 +115,12 @@ async def read_map(
 async def update_map(
     map_id: UUID,
     payload: MapUpdate,
+    request: Request,
     store: StoreDependency,
     storage: StorageDependency,
     user: OptionalCurrentUser,
     db: OptionalDbSession,
+    _limit: MutationRateLimit = None,
 ):
     campaign_map = await store.get_map(map_id)
     if campaign_map is None:
@@ -126,16 +131,25 @@ async def update_map(
     updated = await store.update_map(map_id, payload.model_dump(exclude_unset=True))
     if updated is None:
         raise_not_found("Map")
+    await publish_event(
+        request,
+        map_id,
+        EventType.MAP_UPDATED,
+        actor=actor_from_user(user),
+        payload={"fields": list(payload.model_dump(exclude_unset=True).keys())},
+    )
     return _with_presigned_image_url(updated, storage)
 
 
 @router.post("/maps/{map_id}/image", response_model=MapRead)
 async def upload_map_image(
     map_id: UUID,
+    request: Request,
     store: StoreDependency,
     storage: StorageDependency,
     user: OptionalCurrentUser,
     db: OptionalDbSession,
+    _upload_limit: UploadRateLimit = None,
     file: UploadFile = File(...),
 ):
     campaign_map = await store.get_map(map_id)
@@ -188,15 +202,24 @@ async def upload_map_image(
     )
     if updated is None:
         raise_not_found("Map")
+    await publish_event(
+        request,
+        map_id,
+        EventType.MAP_IMAGE_UPDATED,
+        actor=actor_from_user(user),
+        payload={"width": width, "height": height},
+    )
     return _with_presigned_image_url(updated, storage)
 
 
 @router.delete("/maps/{map_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_map(
     map_id: UUID,
+    request: Request,
     store: StoreDependency,
     user: OptionalCurrentUser,
     db: OptionalDbSession,
+    _limit: MutationRateLimit = None,
 ) -> Response:
     campaign_map = await store.get_map(map_id)
     if campaign_map is None:
@@ -206,4 +229,10 @@ async def delete_map(
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     if not await store.delete_map(map_id):
         raise_not_found("Map")
+    await publish_event(
+        request,
+        map_id,
+        EventType.MAP_DELETED,
+        actor=actor_from_user(user),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

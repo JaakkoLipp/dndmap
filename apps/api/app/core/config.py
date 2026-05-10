@@ -59,6 +59,13 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("DND_MAP_REDIS_URL", "REDIS_URL"),
     )
+    rate_limit_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "DND_MAP_RATE_LIMIT_ENABLED",
+            "RATE_LIMIT_ENABLED",
+        ),
+    )
     auth_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices("DND_MAP_AUTH_ENABLED", "AUTH_ENABLED"),

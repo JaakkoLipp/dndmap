@@ -8,14 +8,17 @@ This document defines module ownership and interface contracts so multiple AI ag
 |---|---|---|
 | `apps/api/app/db/` | Backend-Persistence | SQLAlchemy ORM models, engine factory, session dependency |
 | `apps/api/app/repositories/` | Backend-Persistence | `MapDataStore` Protocol, `InMemoryMapStore`, `PostgresMapStore` |
+| `apps/api/app/realtime/` | Backend-Realtime | Event envelope, `ConnectionManager`, `InMemoryBroker`, `RedisBroker`, REST publisher helpers |
+| `apps/api/app/core/rate_limit.py` | Backend-Realtime | Rate-limit dependency + Redis/in-memory storage |
 | `apps/api/app/auth/` | Backend-Auth | JWT helpers, cookie helpers, OAuth state, provider adapters, dependencies |
 | `apps/api/app/api/routes/auth.py` | Backend-Auth | OAuth login/callback, logout, `/auth/me` |
 | `apps/api/app/api/routes/invites.py` | Backend-Auth | Invite creation and acceptance |
 | `apps/api/app/api/routes/` (others) | Backend-Persistence + Backend-Auth | Campaigns/maps/layers/objects/exports — persistence then RBAC |
 | `apps/api/alembic/` | Backend-Persistence | Migrations — **never edit manually**; use `alembic revision` |
 | `apps/api/app/cli/` | Backend-Persistence | `dndmap-db` CLI entry point |
-| `apps/web/components/map/` | Frontend-Konva | Konva-based canvas components |
-| `apps/web/hooks/` | Frontend-Konva | `useMapState`, `useMapViewport` |
+| `apps/web/components/map/` | Frontend-Konva + Frontend-Realtime | Konva-based canvas components and realtime UI (PresenceIndicator) |
+| `apps/web/hooks/` | Frontend-Konva + Frontend-Realtime | `useMapState`, `useMapViewport`, `useMapRealtime` |
+| `apps/web/lib/realtime.ts` | Frontend-Realtime | Envelope types + WebSocket URL helper (mirrors `app/realtime/events.py`) |
 | `apps/web/components/providers/` | Frontend-Auth | `QueryProvider`, `AuthProvider` |
 | `apps/web/app/login/` | Frontend-Auth | Login page |
 | `apps/web/app/campaigns/` | Frontend-Auth | Campaign list and detail pages |

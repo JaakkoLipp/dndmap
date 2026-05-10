@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import api_router, health_router
 from app.core.config import Settings, get_settings
+from app.core.rate_limit import RateLimiter
+from app.realtime import ConnectionManager, build_broker
 from app.repositories.base import MapDataStore
 from app.repositories.in_memory import InMemoryMapStore
 
@@ -35,9 +37,33 @@ def create_app(
             app.state.store = PostgresMapStore(factory)
         else:
             app.state.store = InMemoryMapStore()
-        yield
-        if hasattr(app.state, "engine"):
-            await app.state.engine.dispose()
+
+        manager = ConnectionManager()
+        broker = build_broker(resolved_settings.redis_url, manager)
+        await broker.start()
+        app.state.realtime_manager = manager
+        app.state.realtime_broker = broker
+
+        redis_client = None
+        if resolved_settings.rate_limit_enabled and resolved_settings.redis_url:
+            try:
+                from redis.asyncio import Redis  # type: ignore[import-not-found]
+
+                redis_client = Redis.from_url(
+                    resolved_settings.redis_url, decode_responses=True
+                )
+            except ImportError:
+                redis_client = None
+        app.state.rate_limiter = RateLimiter(redis_client)
+
+        try:
+            yield
+        finally:
+            await broker.stop()
+            if redis_client is not None:
+                await redis_client.aclose()
+            if hasattr(app.state, "engine"):
+                await app.state.engine.dispose()
 
     app = FastAPI(
         title=resolved_settings.app_name,

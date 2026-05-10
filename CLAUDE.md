@@ -7,7 +7,7 @@ Self-hosted D&D campaign map app. Monorepo with:
 - `apps/web/` — Next.js 15 / React 19 TypeScript frontend
 - `infra/` — Docker Compose, nginx config, Dockerfiles
 
-Milestone 2 (Postgres persistence), Milestone 3 map image upload, and Milestone 4 backend (OAuth + RBAC + invites) are **complete**. The frontend hosted shell for auth, campaigns, invites, and persisted editor routes is started; the remaining large frontend refactor is Track C (Konva canvas rewrite). See `TODO.md` for the full checklist and `docs/roadmap.md` for milestone definitions.
+Milestone 2 (Postgres persistence), Milestone 3 map image upload, and Milestone 4 backend (OAuth + RBAC + invites) are **complete**. Milestone 5 (realtime) has shipped its first wave: authenticated WebSocket route with a stable event envelope, presence snapshot/joined/left, Redis pub/sub broker (with in-memory fallback), REST-mutation invalidation events, and rate limits on auth callback / upload / mutation endpoints. The frontend hosted shell now includes a realtime client with presence pill and auto-reconnect. Remaining Milestone 5 work: object locks, revision history, server-side export workers. Frontend Track C (Konva canvas rewrite) is still pending. See `TODO.md` for the full checklist; `docs/roadmap.md` for milestone definitions; `docs/operations.md` for the production runbook.
 
 ## Backend (`apps/api/`)
 
@@ -74,8 +74,26 @@ app/
     exports.py     # /maps/{id}/exports, /exports
     realtime.py    # WS /ws/campaigns/{id}/maps/{id}
   cli/db.py        # dndmap-db migrate|seed|reset
+  realtime/        # WebSocket event envelope, ConnectionManager, broker (in-memory + Redis)
+  core/
+    config.py      # Settings
+    rate_limit.py  # Rate-limit dependency + Redis/in-memory storage
 alembic/           # Alembic migrations
 ```
+
+### Realtime contract
+
+- All outbound events use the envelope built by
+  `app.realtime.events.build_envelope`:
+  `{id, type, map_id, actor, payload, sent_at}`.
+- REST mutations call `publish_event(request, map_id, EventType.X, actor=..., payload=...)`
+  *after* persistence succeeds; the broker fans out to all sockets
+  connected to that map (across processes when `REDIS_URL` is set).
+- WebSocket auth: when `AUTH_ENABLED=true`, the route reads the
+  `access_token` cookie, checks `campaign_members`, and closes with
+  `1008` if missing/forbidden.
+- Presence is per-process today. Multi-process cross-replica presence is
+  a future slice.
 
 ## Frontend (`apps/web/`)
 
