@@ -6,12 +6,16 @@ from app.core.config import Settings
 from app.repositories.base import MapDataStore
 
 
-def get_store(connection: Request | WebSocket) -> MapDataStore:
-    return connection.app.state.store
+def get_store(request: Request) -> MapDataStore:
+    return request.app.state.store
 
 
-def get_settings(connection: Request | WebSocket) -> Settings:
-    return connection.app.state.settings
+def get_ws_store(websocket: WebSocket) -> MapDataStore:
+    return websocket.app.state.store
+
+
+def get_settings(request: Request) -> Settings:
+    return request.app.state.settings
 
 
 StoreDependency = Annotated[MapDataStore, Depends(get_store)]

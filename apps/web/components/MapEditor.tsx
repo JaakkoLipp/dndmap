@@ -198,15 +198,16 @@ function makeSnapshot(
 
 async function loadImageElement(src: string) {
   const image = new Image();
+  const loaded = new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Image could not be decoded."));
+  });
   image.src = src;
 
-  if ("decode" in image) {
+  try {
     await image.decode();
-  } else {
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("Image could not be decoded."));
-    });
+  } catch {
+    await loaded;
   }
 
   return image;

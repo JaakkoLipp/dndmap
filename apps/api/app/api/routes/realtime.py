@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 
-from app.api.dependencies import get_store
+from app.api.dependencies import get_ws_store
 from app.domain.models import utc_now
 
 router = APIRouter(tags=["realtime"])
@@ -35,7 +35,7 @@ manager = MapConnectionManager()
 
 @router.websocket("/ws/maps/{map_id}")
 async def map_updates(websocket: WebSocket, map_id: UUID) -> None:
-    store = get_store(websocket)
+    store = get_ws_store(websocket)
     if store.get_map(map_id) is None:
         await websocket.close(code=1008, reason="Map not found")
         return
@@ -64,4 +64,3 @@ async def map_updates(websocket: WebSocket, map_id: UUID) -> None:
             await manager.broadcast(map_id, jsonable_encoder(event))
     except WebSocketDisconnect:
         manager.disconnect(map_id, websocket)
-
