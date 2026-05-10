@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { MapEditor } from "../../../../../components/MapEditor";
+import { PresenceIndicator } from "../../../../../components/map/PresenceIndicator";
+import { useMapRealtime } from "../../../../../hooks/useMapRealtime";
 import {
   api,
   queryKeys,
@@ -44,6 +46,10 @@ function findAnnotationLayer(layers: MapLayer[]) {
 
 export function HostedMapEditor({ campaignId, mapId }: HostedMapEditorProps) {
   const queryClient = useQueryClient();
+  const { state: realtimeState, presence } = useMapRealtime({
+    campaignId,
+    mapId
+  });
   const mapQuery = useQuery({
     queryKey: queryKeys.map(mapId),
     queryFn: () => api.maps.get(mapId)
@@ -141,15 +147,28 @@ export function HostedMapEditor({ campaignId, mapId }: HostedMapEditorProps) {
   }
 
   return (
-    <MapEditor
-      initialImage={editorImage}
-      initialObjects={editorObjects}
-      initialTitle={mapQuery.data?.name ?? "Campaign Map"}
-      onSave={(snapshot) => saveMap.mutateAsync(snapshot)}
-      onUploadImage={async (file) => {
-        await uploadImage.mutateAsync(file);
-      }}
-      saveLabel={saveMap.isPending ? "Saving" : "Save"}
-    />
+    <>
+      <div
+        style={{
+          position: "fixed",
+          top: "1rem",
+          right: "1rem",
+          zIndex: 50,
+          pointerEvents: "auto"
+        }}
+      >
+        <PresenceIndicator state={realtimeState} presence={presence} />
+      </div>
+      <MapEditor
+        initialImage={editorImage}
+        initialObjects={editorObjects}
+        initialTitle={mapQuery.data?.name ?? "Campaign Map"}
+        onSave={(snapshot) => saveMap.mutateAsync(snapshot)}
+        onUploadImage={async (file) => {
+          await uploadImage.mutateAsync(file);
+        }}
+        saveLabel={saveMap.isPending ? "Saving" : "Save"}
+      />
+    </>
   );
 }

@@ -18,6 +18,7 @@ x-api-environment: &api-environment
   PERSISTENCE_BACKEND: "${PERSISTENCE_BACKEND:-memory}"
   DATABASE_URL: "${DATABASE_URL:-postgresql+asyncpg://dndmap:dndmap_dev_password@postgres:5432/dndmap}"
   REDIS_URL: "${REDIS_URL:-redis://:dndmap_redis_dev_password@redis:6379/0}"
+  RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-false}"
   S3_BUCKET: "${S3_BUCKET:-dnd-campaign-map}"
   S3_REGION: "${S3_REGION:-us-east-1}"
   S3_ACCESS_KEY_ID: "${S3_ACCESS_KEY_ID:-dndmap_minio}"
@@ -68,7 +69,7 @@ services:
       - app
 
   minio:
-    image: quay.io/minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -88,7 +89,7 @@ services:
       - app
 
   minio-create-bucket:
-    image: quay.io/minio/mc:latest
+    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z
     depends_on:
       minio:
         condition: service_healthy

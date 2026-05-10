@@ -15,25 +15,27 @@ Current capabilities:
 - Postgres-backed persistence with Alembic migrations and local seed/reset commands.
 - S3/MinIO-backed map image upload with presigned image URLs on map reads.
 - Hosted frontend shell for login, campaigns, campaign detail, invites, and persisted map editor routes.
-- Docker Compose services for the API, web app, Postgres, Redis, MinIO, and nginx reverse proxy.
+- Authenticated WebSocket realtime: cookie-gated, campaign-membership-checked, presence snapshot + join/leave events, REST mutations publish invalidation events for connected editors, Redis pub/sub fanout across API replicas with an in-memory fallback.
+- Live presence indicator in the hosted editor: collaborator avatars and a connection-state pill.
+- Rate limits on auth callback, map image upload, and mutation endpoints (Redis-backed when configured, otherwise in-memory).
+- Operations runbook covering TLS, migrations, backups, secret rotation, observability, and incident response.
 
 Planned complete hosted mode:
 
 - React Konva editor rewrite and richer layer controls.
-- S3-compatible storage for thumbnails and export artifacts.
-- Redis-backed sessions, presence, pub/sub, rate limits, and background job coordination.
-- Production runbooks for backups, deploys, migrations, observability, and hosted environment rotation.
+- Server-side export jobs with DM/player visibility, presigned download URLs, and persistent revision history.
+- Object locks during drag/edit and conflict-aware multi-user editing.
+- Production CI smoke tests for Docker Compose, OAuth flows, and realtime sync.
 
 ## Next Product Slice
 
-The next implementation pass should focus on making hosted maps feel genuinely multi-user before expanding the drawing surface:
+With realtime and rate limits landed, the next implementation pass focuses on persistent collaboration semantics and the editor surface:
 
-1. Harden `WS /api/v1/ws/campaigns/{campaign_id}/maps/{map_id}` with auth, membership checks, and a stable realtime event envelope.
-2. Move WebSocket fanout to Redis pub/sub while keeping the in-memory path for tests and local single-process development.
-3. Add presence events and a hosted-editor presence indicator so DMs and players can see who is viewing a map.
-4. Broadcast map/object/layer invalidation events after REST persistence succeeds, then have other open editors refetch through TanStack Query.
-5. Add Redis-backed object locks and revision history before sending direct object mutation payloads over WebSocket.
-6. Finish Discord OAuth production setup docs and smoke tests with real redirect URIs.
+1. Add Redis-backed object locks while a user drags or edits a marker, with TTLs that clear abandoned locks.
+2. Add a `map_revisions` migration and revision-writes on object mutations to power audit and undo flows.
+3. Move PNG/PDF exports server-side with DM/player visibility and presigned download URLs.
+4. Rewrite the SVG editor to React Konva (`MapCanvas.tsx`, `useMapState.ts`, `useMapViewport.ts`) and surface live collaborator cursors.
+5. Finish OAuth provider production setup docs and add a Playwright smoke covering login → campaign creation → map upload → realtime sync.
 
 ## Quick Start
 
@@ -68,6 +70,7 @@ The default reverse proxy listens on `http://localhost:8080` when the `app` prof
 
 - [Developer setup](docs/development.md)
 - [Self-hosted deployment](docs/deployment.md)
+- [Operations runbook](docs/operations.md)
 - [Hosted mode roadmap](docs/roadmap.md)
 
 ## App Layout

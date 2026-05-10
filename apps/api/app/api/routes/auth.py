@@ -11,6 +11,7 @@ from app.auth.jwt import mint_token
 from app.auth.providers import get_provider
 from app.auth.state import sign_state, verify_state
 from app.core.config import Settings
+from app.core.rate_limit import AuthRateLimit
 from app.db import models as orm
 from app.db.session import DbSession
 from app.domain.schemas import UserRead
@@ -55,6 +56,7 @@ async def oauth_callback(
     request: Request,
     response: Response,
     db: DbSession,
+    _limit: AuthRateLimit = None,
 ) -> RedirectResponse:
     settings: Settings = request.app.state.settings
 

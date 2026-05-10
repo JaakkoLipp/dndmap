@@ -45,41 +45,22 @@ What is still needed to reach a complete hosted product.
 
 ## Realtime & Jobs (Milestone 5)
 
-Recommended next implementation order:
+Slices done (see `apps/api/app/realtime/`):
 
-1. Harden the WebSocket contract before adding more editor features:
-   - authenticate WebSocket connections from the `access_token` cookie when `AUTH_ENABLED=true`
-   - reject non-members and map/campaign mismatches with policy-close responses
-   - add a stable event envelope with `id`, `type`, `map_id`, `actor`, `payload`, and `sent_at`
-   - keep REST APIs as the source of persisted truth; use WebSockets for presence, locks, and invalidation/broadcast events
-2. Add Redis-backed realtime coordination:
-   - move map event fanout from in-process memory to Redis pub/sub
-   - keep an in-memory fallback for tests and single-process local development
-   - add presence join/leave/snapshot messages so users can see who is on a map
-3. Wire the hosted editor to realtime:
-   - connect from `app/campaigns/[id]/maps/[mapId]`
-   - show online collaborators in the toolbar
-   - after save/upload/layer changes, broadcast invalidation events
-   - when another user changes the map, invalidate TanStack Query keys and refetch map/layers/objects
-4. Add object locking:
-   - lock while dragging/editing an object
-   - expire locks with a Redis TTL so abandoned locks clear automatically
-   - show who is editing a marker/path/label and prevent conflicting writes in the UI
-5. Add revision history:
-   - create a `map_revisions` migration and repository methods
-   - write a revision on object create/update/delete, layer visibility changes, and map image changes
-   - expose `GET /maps/{id}/revisions` with actor, timestamp, summary, and changed object IDs
-6. Move exports server-side:
-   - enqueue export jobs
-   - generate PNG/PDF artifacts with DM/player visibility rules
-   - store generated artifacts in S3/MinIO and return presigned URLs
+- [x] Authenticate WebSocket connections from the `access_token` cookie when `AUTH_ENABLED=true`; reject non-members with `1008` policy close.
+- [x] Stable event envelope `{id, type, map_id, actor, payload, sent_at}`.
+- [x] Redis pub/sub broker with in-memory fallback for tests / single-process dev.
+- [x] Presence snapshot/joined/left events.
+- [x] Publish realtime invalidation events from REST map / layer / object mutations.
+- [x] Hosted editor realtime client: presence pill, auto-reconnect, TanStack Query invalidation on remote changes.
+- [x] Rate limits on auth callback, image upload, and mutation endpoints (Redis-backed with in-memory fallback).
 
-- [ ] Move WebSocket fanout onto Redis pub/sub so multiple API instances share broadcast state
-- [ ] Add presence indicators (who is connected to a map)
-- [ ] Implement object locking while a user is dragging
-- [ ] Add revision history writes on object mutation
-- [ ] Implement export job workers that generate server-side PNG/PDF respecting DM/player visibility
-- [ ] Add rate limits on auth, upload, and mutation-heavy endpoints
+Still open:
+
+- [ ] Implement object locking while a user is dragging (Redis TTL keys, UI lock indicators).
+- [ ] Add revision history writes on object mutation (`map_revisions` migration + `GET /maps/{id}/revisions`).
+- [ ] Implement export job workers that generate server-side PNG/PDF respecting DM/player visibility.
+- [ ] Cross-process presence snapshot (currently snapshot is per-API-process).
 
 ## Editor Features
 
@@ -107,9 +88,10 @@ Recommended next implementation order:
 
 ## Operations (Milestone 6)
 
-- [ ] Pin image tags/digests in `docker-compose.yml` for reproducible production builds
-- [ ] Add TLS termination docs and example Caddy / Traefik config
-- [ ] Write migration runbook (pre-deploy checklist, rollback steps)
-- [ ] Add backup and restore smoke test for Postgres and MinIO
-- [ ] Set up structured logging and error alerting for the API
-- [ ] Document secret rotation procedure for OAuth credentials and `SESSION_SECRET`
+- [x] Pin image tags in `docker-compose.yml` (MinIO server + mc pinned to dated releases; nginx already pinned)
+- [x] TLS termination docs with Caddy and Traefik examples (`docs/operations.md`)
+- [x] Migration runbook with pre-deploy checklist and rollback steps (`docs/operations.md`)
+- [x] Backup / restore procedure for Postgres and MinIO, plus quarterly smoke-test process (`docs/operations.md`)
+- [x] Secret rotation procedure for OAuth credentials, `SESSION_SECRET`, and `JWT_SECRET` (`docs/operations.md`)
+- [ ] Wire structured logging + error alerting from API logs to your aggregator
+- [ ] Pin image digests (not just tags) for fully reproducible production builds
