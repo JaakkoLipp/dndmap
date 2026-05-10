@@ -44,6 +44,13 @@ class Settings(BaseSettings):
             "CSRF_TRUSTED_ORIGINS",
         ),
     )
+    persistence_backend: Literal["memory"] = Field(
+        default="memory",
+        validation_alias=AliasChoices(
+            "DND_MAP_PERSISTENCE_BACKEND",
+            "PERSISTENCE_BACKEND",
+        ),
+    )
     database_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("DND_MAP_DATABASE_URL", "DATABASE_URL"),

@@ -45,7 +45,7 @@ export type LabelObject = BaseMapObject & {
 };
 
 export type PathObject = BaseMapObject & {
-  type: "line" | "freehand";
+  type: "polyline" | "freehand";
   points: Point[];
   strokeWidth: number;
 };
@@ -63,32 +63,32 @@ export type CampaignMapSnapshot = {
   };
 };
 
+export type PersistedIds = {
+  campaignId: string;
+  mapId: string;
+};
+
 export type SaveCampaignResult = {
   ok: boolean;
   savedAt?: string;
-  snapshot?: CampaignMapSnapshot;
+  campaignId?: string;
+  mapId?: string;
 };
 
 export async function saveCampaignDraft(
-  snapshot: CampaignMapSnapshot
+  snapshot: CampaignMapSnapshot,
+  persistedIds?: PersistedIds
 ): Promise<SaveCampaignResult> {
-  // Local images stay browser-only until the upload/persistence route exists.
-  const payload: CampaignMapSnapshot = {
-    ...snapshot,
-    image: snapshot.image
-      ? {
-          ...snapshot.image,
-          src: "local-browser-image"
-        }
-      : null
-  };
-
   const response = await fetch("/api/campaigns", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: snapshot.title,
+      width: snapshot.image?.width ?? 1600,
+      height: snapshot.image?.height ?? 1000,
+      campaignId: persistedIds?.campaignId,
+      mapId: persistedIds?.mapId
+    })
   });
 
   if (!response.ok) {

@@ -33,10 +33,11 @@ class MapConnectionManager:
 manager = MapConnectionManager()
 
 
-@router.websocket("/ws/maps/{map_id}")
-async def map_updates(websocket: WebSocket, map_id: UUID) -> None:
+@router.websocket("/ws/campaigns/{campaign_id}/maps/{map_id}")
+async def map_updates(websocket: WebSocket, campaign_id: UUID, map_id: UUID) -> None:
     store = get_ws_store(websocket)
-    if store.get_map(map_id) is None:
+    campaign_map = store.get_map(map_id)
+    if campaign_map is None or campaign_map.campaign_id != campaign_id:
         await websocket.close(code=1008, reason="Map not found")
         return
 

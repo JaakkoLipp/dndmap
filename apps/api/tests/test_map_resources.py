@@ -182,8 +182,8 @@ def test_layer_audience_visibility_and_filters(client):
             {"color": "#d7d0bb", "font_size": 28},
         ),
         (
-            "line",
-            {"type": "line", "points": [{"x": 0, "y": 0}, {"x": 80, "y": 40}]},
+            "polyline",
+            {"type": "polyline", "points": [{"x": 0, "y": 0}, {"x": 80, "y": 40}]},
             {"strokeColor": "#6aa9b8", "strokeWidth": 5},
             {"stroke_color": "#6aa9b8", "stroke_width": 5},
         ),

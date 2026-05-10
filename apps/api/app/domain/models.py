@@ -26,7 +26,7 @@ class MapAudience(str, Enum):
 class MapObjectKind(str, Enum):
     MARKER = "marker"
     LABEL = "label"
-    LINE = "line"
+    POLYLINE = "polyline"
     FREEHAND = "freehand"
     POLYGON = "polygon"
     HANDOUT = "handout"

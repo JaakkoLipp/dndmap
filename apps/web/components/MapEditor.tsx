@@ -39,6 +39,7 @@ import type {
   MapObject,
   MapObjectCategory,
   PathObject,
+  PersistedIds,
   Point
 } from "../lib/campaignApi";
 import { saveCampaignDraft } from "../lib/campaignApi";
@@ -175,7 +176,7 @@ function getObjectIcon(type: MapObject["type"]) {
     return <Type size={16} />;
   }
 
-  if (type === "line") {
+  if (type === "polyline") {
     return <Waypoints size={16} />;
   }
 
@@ -286,7 +287,7 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
     context.fillText(object.text, object.x, object.y);
   }
 
-  if (object.type === "line" || object.type === "freehand") {
+  if (object.type === "polyline" || object.type === "freehand") {
     const [firstPoint, ...rest] = object.points;
 
     if (firstPoint) {
@@ -308,6 +309,7 @@ export function MapEditor() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const persistedIdsRef = useRef<PersistedIds | null>(null);
   const [title, setTitle] = useState("Blackfen Campaign");
   const [image, setImage] = useState<MapImageState | null>(null);
   const [objects, setObjects] = useState<MapObject[]>([]);
@@ -477,6 +479,8 @@ export function MapEditor() {
 
   const addPathObject = useCallback(
     (path: DraftPath) => {
+      const kind: PathObject["type"] =
+        path.type === "line" ? "polyline" : "freehand";
       const usefulPoints =
         path.type === "line"
           ? path.points.slice(0, 2)
@@ -494,10 +498,10 @@ export function MapEditor() {
       }
 
       const pathNumber =
-        objects.filter((object) => object.type === path.type).length + 1;
+        objects.filter((object) => object.type === kind).length + 1;
       const nextPath: PathObject = {
-        id: createId(path.type),
-        type: path.type,
+        id: createId(kind),
+        type: kind,
         name: path.type === "line" ? `Route ${pathNumber}` : `Trail ${pathNumber}`,
         category: "route",
         points: usefulPoints,
@@ -851,11 +855,20 @@ export function MapEditor() {
   };
 
   const saveDraft = async () => {
-    setStatus("Saving draft");
+    setStatus("Saving…");
 
     try {
       const snapshot = makeSnapshot(title, image, objects, view);
-      const result = await saveCampaignDraft(snapshot);
+      const result = await saveCampaignDraft(
+        snapshot,
+        persistedIdsRef.current ?? undefined
+      );
+      if (result.campaignId && result.mapId) {
+        persistedIdsRef.current = {
+          campaignId: result.campaignId,
+          mapId: result.mapId
+        };
+      }
       setStatus(
         result.savedAt
           ? `Saved ${new Date(result.savedAt).toLocaleTimeString()}`
@@ -1291,7 +1304,7 @@ export function MapEditor() {
                   </label>
                 ) : null}
 
-                {selectedObject.type === "line" ||
+                {selectedObject.type === "polyline" ||
                 selectedObject.type === "freehand" ? (
                   <label>
                     <span>Stroke</span>
