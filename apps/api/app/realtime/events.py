@@ -46,6 +46,11 @@ class EventType:
     OBJECT_UPDATED = "object.updated"
     OBJECT_DELETED = "object.deleted"
 
+    LOCK_ACQUIRED = "lock.acquired"
+    LOCK_RELEASED = "lock.released"
+    LOCK_DENIED = "lock.denied"
+    LOCK_SNAPSHOT = "lock.snapshot"
+
 
 class Actor(TypedDict, total=False):
     user_id: str

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import api_router, health_router
 from app.core.config import Settings, get_settings
 from app.core.rate_limit import RateLimiter
-from app.realtime import ConnectionManager, build_broker
+from app.realtime import ConnectionManager, build_broker, build_lock_store
 from app.realtime.broker import InMemoryBroker
 from app.repositories.base import MapDataStore
 from app.repositories.in_memory import InMemoryMapStore
@@ -59,7 +59,7 @@ def create_app(
         app.state.realtime_broker = broker
 
         redis_client = None
-        if resolved_settings.rate_limit_enabled and resolved_settings.redis_url:
+        if resolved_settings.redis_url:
             try:
                 from redis.asyncio import Redis  # type: ignore[import-not-found]
 
@@ -68,7 +68,10 @@ def create_app(
                 )
             except ImportError:
                 redis_client = None
-        app.state.rate_limiter = RateLimiter(redis_client)
+        app.state.rate_limiter = RateLimiter(
+            redis_client if resolved_settings.rate_limit_enabled else None
+        )
+        app.state.lock_store = build_lock_store(redis_client)
 
         try:
             yield
