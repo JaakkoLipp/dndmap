@@ -296,7 +296,12 @@ export const api = {
       return apiUrl(`/auth/${provider}/login${query}`);
     },
     me: () => apiFetch<User>("/auth/me"),
-    logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" })
+    logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+    localLogin: (username: string) =>
+      apiFetch<User>("/auth/local/login", {
+        method: "POST",
+        body: JSON.stringify({ username })
+      })
   },
   campaigns: {
     list: () => apiFetch<Campaign[]>("/campaigns"),

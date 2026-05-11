@@ -1,12 +1,13 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, Github, MessageCircle, Search } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
 
 import { useAuth } from "../../components/providers/AuthProvider";
-import { api } from "../../lib/api";
+import { api, ApiError, queryKeys } from "../../lib/api";
 
 type ProviderId = "discord" | "google" | "github";
 
@@ -15,35 +16,62 @@ const OTHER_PROVIDERS: { id: ProviderId; label: string; Icon: typeof Github }[] 
   { id: "github", label: "Continue with GitHub", Icon: Github }
 ];
 
-const ERROR_COPY: Record<string, string> = {
+const OAUTH_ERROR_COPY: Record<string, string> = {
   invalid_state: "Your sign-in link expired. Please try again.",
   missing_state_or_code: "The sign-in link was incomplete. Please try again.",
   provider_not_configured:
-    "OAuth credentials for this provider are not configured on the server. Ask your admin to set OAUTH_DISCORD_CLIENT_ID / OAUTH_DISCORD_CLIENT_SECRET (or the matching variables for Google / GitHub).",
+    "OAuth credentials for this provider are not configured on the server.",
   session_secret_missing:
-    "SESSION_SECRET is not configured on the server. Sign-in cannot proceed until it is set.",
+    "SESSION_SECRET is not configured on the server. Contact your admin.",
   unknown_provider: "Unknown sign-in provider.",
   no_access_token: "The provider did not return an access token.",
   provider_error: "The provider rejected the sign-in. Please try again.",
   jwt_not_configured: "Server is missing a JWT secret. Contact your admin."
 };
 
-function describeError(error: string | null): string | null {
+function describeOAuthError(error: string | null): string | null {
   if (!error) return null;
   if (error.startsWith("provider:")) {
     return `The provider returned an error: ${error.slice("provider:".length)}.`;
   }
-  return ERROR_COPY[error] ?? `Sign-in failed (${error}).`;
+  return OAUTH_ERROR_COPY[error] ?? `Sign-in failed (${error}).`;
 }
 
 function LoginInner() {
   const params = useSearchParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isLoading } = useAuth();
+  const [username, setUsername] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
 
   const next = params.get("next") ?? undefined;
-  const error = describeError(params.get("error"));
+  const oauthError = describeOAuthError(params.get("error"));
   const providerLabel = params.get("provider");
+  const error = localError ?? oauthError;
+
+  async function handleLocalLogin(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = username.trim();
+    if (!trimmed) return;
+    setLocalError(null);
+    setIsPending(true);
+    try {
+      await api.auth.localLogin(trimmed);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.authMe });
+      const dest = next ?? "/campaigns";
+      const sep = dest.includes("?") ? "&" : "?";
+      router.push(`${dest}${sep}welcome=1`);
+    } catch (err) {
+      setLocalError(
+        err instanceof ApiError ? err.detail : "Sign-in failed. Please try again."
+      );
+    } finally {
+      setIsPending(false);
+    }
+  }
 
   return (
     <main className="app-shell centered-shell">
@@ -52,7 +80,7 @@ function LoginInner() {
           <MessageCircle size={28} />
           <div>
             <h1>Campaign Map Forge</h1>
-            <p>Sign in to manage private campaign maps and invites.</p>
+            <p>Enter a username to sign in — new usernames create an account automatically.</p>
           </div>
         </div>
 
@@ -64,20 +92,59 @@ function LoginInner() {
           >
             <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
             <div>
-              <strong>Sign-in failed{providerLabel ? ` (${providerLabel})` : ""}.</strong>
+              <strong>
+                Sign-in failed{providerLabel && !localError ? ` (${providerLabel})` : ""}.
+              </strong>
               <p style={{ margin: "0.25rem 0 0" }}>{error}</p>
             </div>
           </div>
         ) : null}
 
-        <div className="auth-actions" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <form className="properties-form" onSubmit={handleLocalLogin}>
+          <input
+            autoComplete="username"
+            autoFocus
+            disabled={isPending}
+            maxLength={32}
+            minLength={2}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Choose a username"
+            required
+            type="text"
+            value={username}
+          />
+          <button
+            className="wide-action"
+            disabled={isPending || !username.trim()}
+            style={{ border: "none" }}
+            type="submit"
+          >
+            {isPending ? "Signing in…" : "Continue"}
+          </button>
+        </form>
+
+        <div
+          style={{
+            alignItems: "center",
+            color: "var(--muted)",
+            display: "flex",
+            fontSize: "0.8125rem",
+            gap: "10px"
+          }}
+        >
+          <div style={{ background: "var(--border)", flex: 1, height: 1 }} />
+          <span>or continue with</span>
+          <div style={{ background: "var(--border)", flex: 1, height: 1 }} />
+        </div>
+
+        <div className="auth-actions">
           <a
             className="wide-action"
             href={api.auth.loginUrl("discord", { next })}
             style={{
               background: "#5865f2",
-              color: "white",
               border: "1px solid #4752c4",
+              color: "white",
               fontWeight: 600
             }}
           >
@@ -89,11 +156,7 @@ function LoginInner() {
             aria-expanded={showOther}
             className="subtle-button"
             onClick={() => setShowOther((v) => !v)}
-            style={{
-              alignSelf: "flex-start",
-              fontSize: "0.8125rem",
-              gap: "0.25rem"
-            }}
+            style={{ alignSelf: "flex-start", fontSize: "0.8125rem", gap: "0.25rem" }}
             type="button"
           >
             <ChevronDown

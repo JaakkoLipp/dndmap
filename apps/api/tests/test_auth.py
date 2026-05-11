@@ -194,3 +194,76 @@ def test_discord_callback_sets_cookie():
     assert response.status_code in (302, 307)
     set_cookie = response.headers.get("set-cookie", "")
     assert "access_token" in set_cookie
+
+
+def test_local_login_creates_user_and_sets_cookie():
+    """POST /auth/local/login creates a new user and returns access_token cookie."""
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock, MagicMock
+    from fastapi.testclient import TestClient
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.db.session import get_db, get_optional_db
+    from app.main import create_app
+    from app.repositories.in_memory import InMemoryMapStore
+
+    settings = Settings(
+        auth_enabled=True,
+        jwt_secret="test-jwt-secret-that-is-at-least-32-chars",
+        jwt_algorithm="HS256",
+        jwt_expire_minutes=60,
+        session_secret="test-session-secret-at-least-32-chars",
+    )
+
+    test_id = uuid.uuid4()
+    test_now = datetime.now(timezone.utc)
+
+    mock_db = AsyncMock(spec=AsyncSession)
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None  # no existing identity → new user
+    mock_db.execute = AsyncMock(return_value=result)
+    mock_db.add = MagicMock()
+
+    async def _refresh(obj):
+        obj.id = test_id
+        obj.created_at = test_now
+        obj.updated_at = test_now
+
+    mock_db.refresh = AsyncMock(side_effect=_refresh)
+
+    async def _db():
+        yield mock_db
+
+    app = create_app(settings=settings, store=InMemoryMapStore())
+    app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[get_optional_db] = _db
+
+    with TestClient(app) as tc:
+        response = tc.post("/api/v1/auth/local/login", json={"username": "TestDM"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["display_name"] == "TestDM"
+    assert "id" in data
+    assert "access_token" in response.headers.get("set-cookie", "")
+
+
+def test_local_login_returns_503_when_auth_disabled():
+    """POST /auth/local/login returns 503 when AUTH_ENABLED is false."""
+    from unittest.mock import AsyncMock
+    from fastapi.testclient import TestClient
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.db.session import get_db, get_optional_db
+    from app.main import create_app
+    from app.repositories.in_memory import InMemoryMapStore
+
+    app = create_app(settings=Settings(auth_enabled=False), store=InMemoryMapStore())
+
+    async def _db():
+        yield AsyncMock(spec=AsyncSession)
+
+    app.dependency_overrides[get_db] = _db
+    app.dependency_overrides[get_optional_db] = _db
+
+    with TestClient(app) as tc:
+        response = tc.post("/api/v1/auth/local/login", json={"username": "TestDM"})
+    assert response.status_code == 503

@@ -15,7 +15,7 @@ from app.core.config import Settings
 from app.core.rate_limit import AuthRateLimit
 from app.db import models as orm
 from app.db.session import DbSession
-from app.domain.schemas import UserRead
+from app.domain.schemas import LocalLoginRequest, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -159,6 +159,54 @@ async def logout(response: Response) -> dict:
 
 @router.get("/me", response_model=UserRead)
 async def get_me(user: CurrentUser) -> orm.User:
+    return user
+
+
+@router.post("/local/login", response_model=UserRead)
+async def local_login(
+    body: LocalLoginRequest,
+    request: Request,
+    response: Response,
+    db: DbSession,
+    _limit: AuthRateLimit = None,
+) -> orm.User:
+    """Create or retrieve a user by username and issue a session cookie.
+
+    No password is required — the username is the sole identity token.
+    Intended for local development and system testing when OAuth is not configured.
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.auth_enabled:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AUTH_ENABLED is not set")
+    if not settings.jwt_secret:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="JWT_SECRET is not configured")
+
+    provider_uid = body.username.strip().lower()
+    result = await db.execute(
+        select(orm.OAuthIdentity).where(
+            orm.OAuthIdentity.provider == "local",
+            orm.OAuthIdentity.provider_user_id == provider_uid,
+        )
+    )
+    identity = result.scalar_one_or_none()
+
+    if identity:
+        user = await db.get(orm.User, identity.user_id)
+    else:
+        user = orm.User(display_name=body.username.strip())
+        db.add(user)
+        await db.flush()
+        identity = orm.OAuthIdentity(
+            user_id=user.id,
+            provider="local",
+            provider_user_id=provider_uid,
+        )
+        db.add(identity)
+        await db.commit()
+        await db.refresh(user)
+
+    token = mint_token(user.id, settings)
+    set_auth_cookie(response, token, settings.jwt_expire_minutes, settings.environment == "production")
     return user
 
 

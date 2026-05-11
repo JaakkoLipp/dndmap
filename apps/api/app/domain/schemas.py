@@ -736,3 +736,7 @@ class MapRevisionRead(ApiModel):
     summary: str
     payload: dict[str, Any]
     created_at: datetime
+
+
+class LocalLoginRequest(ApiModel):
+    username: str = Field(min_length=2, max_length=32)
