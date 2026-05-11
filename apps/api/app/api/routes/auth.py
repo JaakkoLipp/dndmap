@@ -89,13 +89,13 @@ async def oauth_callback(
     *,
     request: Request,
     response: Response,
-    db: DbSession,
+    db: OptionalDbSession,
     _limit: AuthRateLimit = None,
 ) -> RedirectResponse:
     settings: Settings = request.app.state.settings
 
     if not settings.session_secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="session_secret not configured")
+        return _login_error_redirect(provider, "session_secret_missing", "/campaigns")
 
     if error:
         # Provider sent us back with an explicit error (denied consent, etc.)
@@ -131,10 +131,15 @@ async def oauth_callback(
     except Exception:
         return _login_error_redirect(provider, "provider_error", next_path)
 
-    user = await _upsert_user(db, provider, profile, tokens)
-
     if not settings.jwt_secret:
         return _login_error_redirect(provider, "jwt_not_configured", next_path)
+
+    if db is None:
+        # Auth was configured (we got this far) but the DB isn't available
+        # to persist the new account. Surface it instead of crashing.
+        return _login_error_redirect(provider, "database_unavailable", next_path)
+
+    user = await _upsert_user(db, provider, profile, tokens)
 
     jwt_token = mint_token(user.id, settings)
     # ``welcome=1`` lets the post-login page trigger a one-time toast.

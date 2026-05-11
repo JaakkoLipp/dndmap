@@ -26,7 +26,9 @@ const OAUTH_ERROR_COPY: Record<string, string> = {
   unknown_provider: "Unknown sign-in provider.",
   no_access_token: "The provider did not return an access token.",
   provider_error: "The provider rejected the sign-in. Please try again.",
-  jwt_not_configured: "Server is missing a JWT secret. Contact your admin."
+  jwt_not_configured: "Server is missing a JWT secret. Contact your admin.",
+  database_unavailable:
+    "Sign-in succeeded with the provider, but the database is unreachable so we can't store your account. Contact your admin."
 };
 
 function describeOAuthError(error: string | null): string | null {
