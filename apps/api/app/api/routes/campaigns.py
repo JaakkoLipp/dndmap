@@ -37,7 +37,8 @@ async def list_campaigns(
             for campaign in campaigns
         ]
 
-    assert db is not None
+    if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
     campaign_ids = [campaign.id for campaign in campaigns]
     result = await db.execute(
         select(orm.CampaignMember.campaign_id, orm.CampaignMember.role).where(
@@ -98,7 +99,8 @@ async def get_my_membership(
             role=orm.CampaignRole.OWNER.value,
             joined_at=utc_now(),
         )
-    assert db is not None
+    if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
     result = await db.execute(
         select(orm.CampaignMember).where(
             orm.CampaignMember.campaign_id == campaign_id,
@@ -119,7 +121,8 @@ async def read_campaign(
     db: OptionalDbSession,
 ):
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_id, user, db)
     campaign = await store.get_campaign(campaign_id)
     if campaign is None:
@@ -136,7 +139,8 @@ async def update_campaign(
     db: OptionalDbSession,
 ):
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     campaign = await store.update_campaign(
         campaign_id,
@@ -155,7 +159,8 @@ async def delete_campaign(
     db: OptionalDbSession,
 ) -> Response:
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_id, user, db, minimum_role=orm.CampaignRole.OWNER)
     if not await store.delete_campaign(campaign_id):
         raise_not_found("Campaign")

@@ -21,6 +21,7 @@ def _memory_auth_client(**overrides) -> TestClient:
     """Build an app with AUTH_ENABLED=true but no Postgres configured."""
     base = dict(
         auth_enabled=True,
+        local_login_enabled=True,
         jwt_secret="x" * 32,
         session_secret="y" * 32,
         oauth_discord_client_id="id",

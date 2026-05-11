@@ -22,7 +22,8 @@ async def list_exports(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db)
     return await store.list_exports(map_id=map_id)
 
@@ -43,7 +44,8 @@ async def create_export(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     return await store.create_export(map_id=map_id, **payload.model_dump())
 
@@ -59,8 +61,10 @@ async def read_export(
     if export is None:
         raise_not_found("Export")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         campaign_map = await store.get_map(export.map_id)
-        assert campaign_map is not None
+        if campaign_map is None:
+            raise_not_found("Map")
         await get_campaign_member(campaign_map.campaign_id, user, db)
     return export

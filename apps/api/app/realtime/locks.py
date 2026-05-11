@@ -153,16 +153,32 @@ class InMemoryLockStore:
 
 
 class RedisLockStore:
-    """Redis-backed lock store using ``SET ... EX ... NX``."""
+    """Redis-backed lock store.
 
-    # ARGV[1] = expected holder_client_id
+    Locks are hashes at ``dndmap:lock:{map_id}:{object_id}`` with TTL.
+    A per-client index at ``dndmap:client_locks:{client_id}`` stores the
+    set of ``{map_id}:{object_id}`` strings the client holds, so a
+    disconnect can release everything atomically without scanning the
+    entire lock namespace. The client-index key is set to expire shortly
+    after the longest possible lock TTL so it self-cleans even when a
+    disconnect handler doesn't fire.
+    """
+
+    # ARGV[1] = expected holder_client_id, KEYS[2] = per-client index
     _COMPARE_DELETE_LUA = """
     local current = redis.call('HGET', KEYS[1], 'holder')
     if current == ARGV[1] then
+        if KEYS[2] and KEYS[2] ~= '' then
+            redis.call('SREM', KEYS[2], ARGV[2])
+        end
         return redis.call('DEL', KEYS[1])
     end
     return 0
     """
+
+    # Keep client-index entries a bit longer than the longest lock TTL so
+    # the index doesn't disappear mid-disconnect cleanup.
+    _CLIENT_INDEX_TTL_BUFFER = 60
 
     def __init__(self, redis_client) -> None:  # type: ignore[no-untyped-def]
         self._redis = redis_client
@@ -174,6 +190,14 @@ class RedisLockStore:
     @staticmethod
     def _scan_pattern(map_id: UUID) -> str:
         return f"dndmap:lock:{map_id}:*"
+
+    @staticmethod
+    def _client_index_key(client_id: str) -> str:
+        return f"dndmap:client_locks:{client_id}"
+
+    @staticmethod
+    def _index_member(map_id: UUID, object_id: UUID) -> str:
+        return f"{map_id}:{object_id}"
 
     async def acquire(
         self,
@@ -190,6 +214,8 @@ class RedisLockStore:
             if current_holder and current_holder != holder_client_id:
                 return None
 
+        index_key = self._client_index_key(holder_client_id)
+        member = self._index_member(map_id, object_id)
         pipe = self._redis.pipeline()
         pipe.hset(
             key,
@@ -199,6 +225,8 @@ class RedisLockStore:
             },
         )
         pipe.expire(key, ttl_seconds)
+        pipe.sadd(index_key, member)
+        pipe.expire(index_key, ttl_seconds + self._CLIENT_INDEX_TTL_BUFFER)
         await pipe.execute()
         return Lock(
             map_id=map_id,
@@ -212,8 +240,10 @@ class RedisLockStore:
         self, map_id: UUID, object_id: UUID, holder_client_id: str
     ) -> bool:
         key = self._key(map_id, object_id)
+        index_key = self._client_index_key(holder_client_id)
+        member = self._index_member(map_id, object_id)
         deleted = await self._redis.eval(
-            self._COMPARE_DELETE_LUA, 1, key, holder_client_id
+            self._COMPARE_DELETE_LUA, 2, key, index_key, holder_client_id, member
         )
         return int(deleted or 0) > 0
 
@@ -228,7 +258,11 @@ class RedisLockStore:
         existing = await self._redis.hgetall(key)
         if not existing or existing.get("holder") != holder_client_id:
             return None
-        await self._redis.expire(key, ttl_seconds)
+        index_key = self._client_index_key(holder_client_id)
+        pipe = self._redis.pipeline()
+        pipe.expire(key, ttl_seconds)
+        pipe.expire(index_key, ttl_seconds + self._CLIENT_INDEX_TTL_BUFFER)
+        await pipe.execute()
         return Lock(
             map_id=map_id,
             object_id=object_id,
@@ -244,7 +278,10 @@ class RedisLockStore:
             if not data:
                 continue
             try:
-                _, _, _, _, object_id_str = key.split(":")
+                _, _, _, object_id_str = key.rsplit(":", 3)[-4:]
+            except ValueError:
+                continue
+            try:
                 object_id = UUID(object_id_str)
             except (ValueError, TypeError):
                 continue
@@ -261,11 +298,32 @@ class RedisLockStore:
         return results
 
     async def release_all_for_client(self, client_id: str) -> list[Lock]:
-        # Locks aren't indexed by holder; scanning the full namespace would
-        # be expensive on large deployments. The TTL serves as the safety
-        # net here — abandoned locks self-clear within `ttl_seconds`.
-        # Implement only if profiling shows it's needed.
-        return []
+        index_key = self._client_index_key(client_id)
+        members = await self._redis.smembers(index_key)
+        if not members:
+            return []
+        released: list[Lock] = []
+        for member in members:
+            try:
+                map_id_str, object_id_str = member.split(":", 1)
+                map_id = UUID(map_id_str)
+                object_id = UUID(object_id_str)
+            except ValueError:
+                continue
+            if await self.release(map_id, object_id, client_id):
+                released.append(
+                    Lock(
+                        map_id=map_id,
+                        object_id=object_id,
+                        holder_client_id=client_id,
+                        holder_display_name=None,
+                        expires_at=time.time(),
+                    )
+                )
+        # The Lua compare-delete already trimmed the index entries that
+        # were actually released; this DEL covers a fully-cleared key.
+        await self._redis.delete(index_key)
+        return released
 
 
 def build_lock_store(redis_client) -> LockStore:  # type: ignore[no-untyped-def]

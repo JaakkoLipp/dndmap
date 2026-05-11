@@ -167,6 +167,28 @@ async def get_me(user: CurrentUser) -> orm.User:
     return user
 
 
+# Reserved usernames for the no-password local login mode. These names
+# look authoritative in the UI; refusing them prevents an attacker from
+# claiming "admin" as a display name to socially impersonate.
+_RESERVED_USERNAMES = frozenset(
+    {
+        "admin",
+        "administrator",
+        "root",
+        "system",
+        "owner",
+        "dm",
+        "moderator",
+        "mod",
+        "support",
+        "staff",
+        "operator",
+        "host",
+        "official",
+    }
+)
+
+
 @router.post("/local/login", response_model=UserRead)
 async def local_login(
     body: LocalLoginRequest,
@@ -178,13 +200,23 @@ async def local_login(
     """Create or retrieve a user by username and issue a session cookie.
 
     No password is required — the username is the sole identity token.
-    Intended for local development and system testing when OAuth is not configured.
+    Intended for local development and trusted-network deployments.
+    Gated by ``LOCAL_LOGIN_ENABLED`` so production OAuth deployments
+    don't accidentally expose this passwordless route.
     """
     settings: Settings = request.app.state.settings
     if not settings.auth_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Username login is disabled: set AUTH_ENABLED=true on the server.",
+        )
+    if not settings.local_login_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "Username login is disabled on this server. Use the OAuth "
+                "providers below, or set LOCAL_LOGIN_ENABLED=true to enable it."
+            ),
         )
     if not settings.jwt_secret:
         raise HTTPException(
@@ -201,6 +233,11 @@ async def local_login(
         )
 
     provider_uid = body.username.strip().lower()
+    if provider_uid in _RESERVED_USERNAMES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That username is reserved. Pick a different name.",
+        )
     result = await db.execute(
         select(orm.OAuthIdentity).where(
             orm.OAuthIdentity.provider == "local",

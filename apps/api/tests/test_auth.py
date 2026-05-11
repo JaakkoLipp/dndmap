@@ -208,6 +208,7 @@ def test_local_login_creates_user_and_sets_cookie():
 
     settings = Settings(
         auth_enabled=True,
+        local_login_enabled=True,
         jwt_secret="test-jwt-secret-that-is-at-least-32-chars",
         jwt_algorithm="HS256",
         jwt_expire_minutes=60,

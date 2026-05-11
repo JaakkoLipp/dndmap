@@ -33,7 +33,8 @@ async def list_revisions(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db)
 
     if db is None:
