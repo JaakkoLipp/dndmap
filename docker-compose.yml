@@ -144,7 +144,11 @@ services:
     environment:
       <<: *auth-environment
       APP_ENV: "${APP_ENV:-development}"
-      NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}"
+      # Leave NEXT_PUBLIC_API_BASE_URL unset so the web app makes
+      # same-origin /api/* requests routed by nginx (port 8080) or by
+      # the Next.js rewrite (port 3000). Setting it to an absolute API
+      # URL breaks the OAuth redirect chain (see lib/api.ts).
+      NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:-}"
       INTERNAL_API_BASE_URL: "${INTERNAL_API_BASE_URL:-http://api:8000}"
       NEXT_TELEMETRY_DISABLED: "1"
     ports:

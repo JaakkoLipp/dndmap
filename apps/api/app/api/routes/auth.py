@@ -14,7 +14,7 @@ from app.auth.state import sign_state, verify_state
 from app.core.config import Settings
 from app.core.rate_limit import AuthRateLimit
 from app.db import models as orm
-from app.db.session import DbSession
+from app.db.session import DbSession, OptionalDbSession
 from app.domain.schemas import LocalLoginRequest, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -167,7 +167,7 @@ async def local_login(
     body: LocalLoginRequest,
     request: Request,
     response: Response,
-    db: DbSession,
+    db: OptionalDbSession,
     _limit: AuthRateLimit = None,
 ) -> orm.User:
     """Create or retrieve a user by username and issue a session cookie.
@@ -177,9 +177,23 @@ async def local_login(
     """
     settings: Settings = request.app.state.settings
     if not settings.auth_enabled:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AUTH_ENABLED is not set")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Username login is disabled: set AUTH_ENABLED=true on the server.",
+        )
     if not settings.jwt_secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="JWT_SECRET is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Username login is disabled: JWT_SECRET is not configured on the server.",
+        )
+    if db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Username login requires a database. Set PERSISTENCE_BACKEND=postgres "
+                "and a reachable DATABASE_URL, then run `dndmap-db migrate`."
+            ),
+        )
 
     provider_uid = body.username.strip().lower()
     result = await db.execute(

@@ -21,6 +21,24 @@ function apiUrl(path: string) {
   return `${getApiBase()}${API_PREFIX}${normalizedPath}`;
 }
 
+/**
+ * Build a *same-origin* URL into the API.
+ *
+ * Use this for endpoints that the browser navigates to directly
+ * (OAuth login redirects), where the API will respond with a 302 to a
+ * relative path on the web app (e.g. ``/login?error=...``). If the URL
+ * were absolute and pointed at the API origin, the browser would
+ * resolve that relative redirect against the API origin and hit a
+ * route that doesn't exist (→ 404).
+ *
+ * fetch() calls can use ``apiUrl`` and benefit from CORS + a different
+ * API host; full-page navigations must use this helper.
+ */
+function sameOriginApiUrl(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_PREFIX}${normalizedPath}`;
+}
+
 async function readError(response: Response) {
   try {
     const body = (await response.json()) as { detail?: unknown };
@@ -293,7 +311,9 @@ export const api = {
       options: { next?: string } = {}
     ) => {
       const query = options.next ? `?next=${encodeURIComponent(options.next)}` : "";
-      return apiUrl(`/auth/${provider}/login${query}`);
+      // Must be same-origin: the API responds with a 302 to /login on
+      // failure, and the browser resolves that against the current origin.
+      return sameOriginApiUrl(`/auth/${provider}/login${query}`);
     },
     me: () => apiFetch<User>("/auth/me"),
     logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" }),
