@@ -18,11 +18,16 @@ async def _get_settings(request: Request) -> Settings:
 
 async def get_current_user(
     request: Request,
-    db: DbSession,
+    db: OptionalDbSession,
 ) -> orm.User:
     settings: Settings = request.app.state.settings
     if not settings.auth_enabled:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Auth not enabled")
+    if db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not configured (set PERSISTENCE_BACKEND=postgres + DATABASE_URL)",
+        )
     token = get_token_from_cookie(request)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")

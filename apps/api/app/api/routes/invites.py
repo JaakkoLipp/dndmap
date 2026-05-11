@@ -7,11 +7,19 @@ from sqlalchemy import select
 
 from app.auth.dependencies import CurrentUser, get_campaign_member
 from app.db import models as orm
-from app.db.session import DbSession
+from app.db.session import OptionalDbSession
 from app.domain.models import utc_now
 from app.domain.schemas import CampaignMemberRead, InviteCreate, InviteRead
 
 router = APIRouter(tags=["invites"])
+
+
+def _require_db(db) -> None:
+    if db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Invites require a database (PERSISTENCE_BACKEND=postgres + DATABASE_URL).",
+        )
 
 
 @router.post(
@@ -23,8 +31,9 @@ async def create_invite(
     campaign_id: UUID,
     payload: InviteCreate,
     user: CurrentUser,
-    db: DbSession,
+    db: OptionalDbSession,
 ) -> orm.CampaignInvite:
+    _require_db(db)
     await get_campaign_member(campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
 
     expires_at = None
@@ -53,8 +62,9 @@ async def create_invite(
 async def accept_invite(
     code: str,
     user: CurrentUser,
-    db: DbSession,
+    db: OptionalDbSession,
 ) -> orm.CampaignMember:
+    _require_db(db)
     result = await db.execute(
         select(orm.CampaignInvite).where(orm.CampaignInvite.code == code)
     )

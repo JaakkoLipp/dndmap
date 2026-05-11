@@ -14,7 +14,7 @@ from app.auth.state import sign_state, verify_state
 from app.core.config import Settings
 from app.core.rate_limit import AuthRateLimit
 from app.db import models as orm
-from app.db.session import DbSession
+from app.db.session import DbSession, OptionalDbSession
 from app.domain.schemas import LocalLoginRequest, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -89,13 +89,13 @@ async def oauth_callback(
     *,
     request: Request,
     response: Response,
-    db: DbSession,
+    db: OptionalDbSession,
     _limit: AuthRateLimit = None,
 ) -> RedirectResponse:
     settings: Settings = request.app.state.settings
 
     if not settings.session_secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="session_secret not configured")
+        return _login_error_redirect(provider, "session_secret_missing", "/campaigns")
 
     if error:
         # Provider sent us back with an explicit error (denied consent, etc.)
@@ -131,10 +131,15 @@ async def oauth_callback(
     except Exception:
         return _login_error_redirect(provider, "provider_error", next_path)
 
-    user = await _upsert_user(db, provider, profile, tokens)
-
     if not settings.jwt_secret:
         return _login_error_redirect(provider, "jwt_not_configured", next_path)
+
+    if db is None:
+        # Auth was configured (we got this far) but the DB isn't available
+        # to persist the new account. Surface it instead of crashing.
+        return _login_error_redirect(provider, "database_unavailable", next_path)
+
+    user = await _upsert_user(db, provider, profile, tokens)
 
     jwt_token = mint_token(user.id, settings)
     # ``welcome=1`` lets the post-login page trigger a one-time toast.
@@ -162,26 +167,77 @@ async def get_me(user: CurrentUser) -> orm.User:
     return user
 
 
+# Reserved usernames for the no-password local login mode. These names
+# look authoritative in the UI; refusing them prevents an attacker from
+# claiming "admin" as a display name to socially impersonate.
+_RESERVED_USERNAMES = frozenset(
+    {
+        "admin",
+        "administrator",
+        "root",
+        "system",
+        "owner",
+        "dm",
+        "moderator",
+        "mod",
+        "support",
+        "staff",
+        "operator",
+        "host",
+        "official",
+    }
+)
+
+
 @router.post("/local/login", response_model=UserRead)
 async def local_login(
     body: LocalLoginRequest,
     request: Request,
     response: Response,
-    db: DbSession,
+    db: OptionalDbSession,
     _limit: AuthRateLimit = None,
 ) -> orm.User:
     """Create or retrieve a user by username and issue a session cookie.
 
     No password is required — the username is the sole identity token.
-    Intended for local development and system testing when OAuth is not configured.
+    Intended for local development and trusted-network deployments.
+    Gated by ``LOCAL_LOGIN_ENABLED`` so production OAuth deployments
+    don't accidentally expose this passwordless route.
     """
     settings: Settings = request.app.state.settings
     if not settings.auth_enabled:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="AUTH_ENABLED is not set")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Username login is disabled: set AUTH_ENABLED=true on the server.",
+        )
+    if not settings.local_login_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "Username login is disabled on this server. Use the OAuth "
+                "providers below, or set LOCAL_LOGIN_ENABLED=true to enable it."
+            ),
+        )
     if not settings.jwt_secret:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="JWT_SECRET is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Username login is disabled: JWT_SECRET is not configured on the server.",
+        )
+    if db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Username login requires a database. Set PERSISTENCE_BACKEND=postgres "
+                "and a reachable DATABASE_URL, then run `dndmap-db migrate`."
+            ),
+        )
 
     provider_uid = body.username.strip().lower()
+    if provider_uid in _RESERVED_USERNAMES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That username is reserved. Pick a different name.",
+        )
     result = await db.execute(
         select(orm.OAuthIdentity).where(
             orm.OAuthIdentity.provider == "local",

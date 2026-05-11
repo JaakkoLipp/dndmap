@@ -106,6 +106,13 @@ class Settings(BaseSettings):
         default=False,
         validation_alias=AliasChoices("DND_MAP_AUTH_ENABLED", "AUTH_ENABLED"),
     )
+    local_login_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "DND_MAP_LOCAL_LOGIN_ENABLED",
+            "LOCAL_LOGIN_ENABLED",
+        ),
+    )
     jwt_secret: str | None = Field(
         default=None,
         validation_alias=AliasChoices("DND_MAP_JWT_SECRET", "JWT_SECRET"),

@@ -27,7 +27,8 @@ async def list_layers(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db)
     return await store.list_layers(map_id=map_id, visible=visible, audience=audience)
 
@@ -50,7 +51,8 @@ async def create_layer(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     layer = await store.create_layer(map_id=map_id, **payload.model_dump())
     event_payload = {"layer_id": str(layer.id), "name": layer.name}
@@ -83,9 +85,11 @@ async def read_layer(
     if layer is None:
         raise_not_found("Layer")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         campaign_map = await store.get_map(layer.map_id)
-        assert campaign_map is not None
+        if campaign_map is None:
+            raise_not_found("Map")
         await get_campaign_member(campaign_map.campaign_id, user, db)
     return layer
 
@@ -104,9 +108,11 @@ async def update_layer(
     if layer is None:
         raise_not_found("Layer")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         campaign_map = await store.get_map(layer.map_id)
-        assert campaign_map is not None
+        if campaign_map is None:
+            raise_not_found("Map")
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     changes = payload.model_dump(exclude_unset=True)
     updated = await store.update_layer(layer_id, changes)
@@ -147,9 +153,11 @@ async def delete_layer(
     if layer is None:
         raise_not_found("Layer")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         campaign_map = await store.get_map(layer.map_id)
-        assert campaign_map is not None
+        if campaign_map is None:
+            raise_not_found("Map")
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     map_id = layer.map_id
     layer_name = layer.name

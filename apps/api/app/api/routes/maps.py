@@ -22,6 +22,10 @@ from app.storage import ObjectStorage, StorageConfigurationError
 
 router = APIRouter(tags=["maps"])
 
+# Cap individual map uploads. Keep in sync with `client_max_body_size`
+# in `infra/nginx/default.conf` (currently 25m).
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
 
 def _with_presigned_image_url(
     campaign_map: CampaignMap,
@@ -63,7 +67,8 @@ async def list_maps(
     db: OptionalDbSession,
 ) -> list:
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_id, user, db)
     elif await store.get_campaign(campaign_id) is None:
         raise_not_found("Campaign")
@@ -86,7 +91,8 @@ async def create_map(
     _limit: MutationRateLimit = None,
 ):
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     elif await store.get_campaign(campaign_id) is None:
         raise_not_found("Campaign")
@@ -106,7 +112,8 @@ async def read_map(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db)
     return _with_presigned_image_url(campaign_map, storage)
 
@@ -126,7 +133,8 @@ async def update_map(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     changes = payload.model_dump(exclude_unset=True)
     updated = await store.update_map(map_id, changes)
@@ -168,7 +176,8 @@ async def upload_map_image(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(
             campaign_map.campaign_id,
             user,
@@ -183,7 +192,22 @@ async def upload_map_image(
             detail="Map upload must be an image",
         )
 
+    # Reject oversized uploads before we materialise them in memory. nginx
+    # caps this at client_max_body_size 25m, but a direct-to-API caller
+    # (without the proxy) could otherwise OOM the process.
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Map upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+        )
+
     body = await file.read()
+    if len(body) > MAX_UPLOAD_BYTES:
+        # Some clients don't send Content-Length; double-check after read.
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Map upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+        )
     width, height = _read_image_size(body)
     filename = _safe_filename(file.filename)
     object_key = f"maps/{map_id}/{uuid4()}-{filename}"
@@ -246,7 +270,8 @@ async def delete_map(
     if campaign_map is None:
         raise_not_found("Map")
     if user is not None:
-        assert db is not None
+        if db is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database not configured")
         await get_campaign_member(campaign_map.campaign_id, user, db, minimum_role=orm.CampaignRole.DM)
     if not await store.delete_map(map_id):
         raise_not_found("Map")

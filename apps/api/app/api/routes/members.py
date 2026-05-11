@@ -133,7 +133,8 @@ async def update_member_role(
     await db.refresh(member)
 
     user_row = await db.get(orm.User, user_id)
-    assert user_row is not None
+    if user_row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return CampaignMemberDetail(
         campaign_id=member.campaign_id,
         user_id=member.user_id,
