@@ -14,8 +14,15 @@ from alembic.config import Config
 
 
 def _alembic_cfg() -> Config:
-    here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    cfg = Config(os.path.join(here, "alembic.ini"))
+    # Preference order: explicit env var → cwd (Docker WORKDIR /app) → dev source tree
+    explicit = os.environ.get("ALEMBIC_CONFIG")
+    cwd_ini = os.path.join(os.getcwd(), "alembic.ini")
+    src_ini = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "alembic.ini",
+    )
+    ini_path = explicit or (cwd_ini if os.path.exists(cwd_ini) else src_ini)
+    cfg = Config(ini_path)
     db_url = os.environ.get("DATABASE_URL")
     if db_url:
         if db_url.startswith("postgres://"):

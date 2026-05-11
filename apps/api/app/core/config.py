@@ -1,8 +1,28 @@
+import json
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, EnvSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings.sources import DotEnvSettingsSource
+
+
+class _CommaListEnvSource(EnvSettingsSource):
+    """Accepts comma-separated strings for list fields in addition to JSON arrays."""
+
+    def decode_complex_value(self, field_name: str, field, value: str) -> object:
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return [item.strip() for item in value.split(",") if item.strip()]
+
+
+class _CommaListDotenvSource(DotEnvSettingsSource):
+    def decode_complex_value(self, field_name: str, field, value: str) -> object:
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return [item.strip() for item in value.split(",") if item.strip()]
 
 
 class Settings(BaseSettings):
@@ -12,6 +32,22 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            _CommaListEnvSource(settings_cls),
+            _CommaListDotenvSource(settings_cls),
+            file_secret_settings,
+        )
 
     app_name: str = Field(
         default="D&D Campaign Map API",
@@ -172,13 +208,6 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("DND_MAP_SESSION_SECRET", "SESSION_SECRET"),
     )
-
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value: object) -> object:
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
 
 
 @lru_cache
