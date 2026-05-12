@@ -314,7 +314,7 @@ function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) 
 }
 
 export function MapEditor({
-  initialTitle = "Blackfen Campaign",
+  initialTitle = "D&D Campaign",
   initialImage = null,
   initialObjects = EMPTY_MAP_OBJECTS,
   onSave,
