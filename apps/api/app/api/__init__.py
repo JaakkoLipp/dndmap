@@ -1,2 +1,0 @@
-"""API routing and dependencies."""
-
