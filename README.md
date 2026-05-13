@@ -2,7 +2,7 @@
 
 A minimal, stateless browser tool for editing D&D maps.
 
-The app is now just a Next.js frontend. It loads images locally in the browser, lets you add and edit map notes, and exports PNG/PDF files client-side. There is no backend, auth, hosted campaign shell, database, Docker stack, or external object storage.
+The app is now just a Next.js frontend. It loads images locally in the browser, lets you add and edit map notes, and exports PNG/PDF files client-side. There is no backend, auth, hosted campaign shell, database, Docker Compose stack, or external object storage.
 
 ## Current Features
 
@@ -16,6 +16,18 @@ The app is now just a Next.js frontend. It loads images locally in the browser, 
 cd apps/web
 npm install
 npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Docker Deployment
+
+Build and run the frontend as a standalone Next.js container:
+
+```powershell
+cd apps/web
+docker build -t dndmap-web .
+docker run --rm -p 3000:3000 dndmap-web
 ```
 
 Open `http://localhost:3000`.
