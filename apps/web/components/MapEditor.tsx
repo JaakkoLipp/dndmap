@@ -7,12 +7,15 @@ import {
   FilePlus2,
   FileText,
   FolderOpen,
+  Hexagon,
   ImagePlus,
   Layers3,
   MapPin,
   Maximize2,
+  MonitorPlay,
   MousePointer2,
   Move,
+  Paperclip,
   PenLine,
   Plus,
   Save,
@@ -20,6 +23,7 @@ import {
   Type,
   Users,
   Waypoints,
+  X,
   ZoomIn,
   ZoomOut,
   type LucideIcon
@@ -37,6 +41,7 @@ import type {
 } from "react";
 import type {
   CampaignMapSnapshot,
+  HandoutContent,
   MapImageState,
   MapObject,
   MapObjectCategory,
@@ -45,6 +50,19 @@ import type {
 } from "../lib/api";
 import { downloadCanvasAsPdf } from "../lib/pdfExport";
 import {
+  CATEGORY_ORDER,
+  OBJECT_COLORS,
+  createArea,
+  createLabel,
+  createMarker,
+  createPathFromDraft,
+  exportBaseName,
+  getCategoryMeta,
+  getObjectDisplayName,
+  hasHandout,
+  moveObject
+} from "../lib/mapObjects";
+import {
   clearStoredSnapshot,
   downloadCampaignFile,
   loadStoredSnapshot,
@@ -52,7 +70,14 @@ import {
   saveStoredSnapshot
 } from "../lib/storage";
 
-type Tool = "select" | "pan" | "marker" | "label" | "line" | "freehand";
+type Tool =
+  | "select"
+  | "pan"
+  | "marker"
+  | "label"
+  | "line"
+  | "freehand"
+  | "area";
 
 type ExportAudience = "dm" | "player";
 
@@ -91,6 +116,8 @@ type EditableObjectUpdates = Partial<{
   text: string;
   fontSize: number;
   strokeWidth: number;
+  fillOpacity: number;
+  handout: HandoutContent | null;
 }>;
 
 type MapEditorProps = {
@@ -109,82 +136,20 @@ const DEFAULT_WORLD = {
 
 const EMPTY_MAP_OBJECTS: MapObject[] = [];
 
-const CATEGORY_ORDER: MapObjectCategory[] = [
-  "settlement",
-  "dungeon",
-  "danger",
-  "quest",
-  "faction",
-  "route",
-  "rumor"
-];
-
-const CATEGORY_META: Record<
-  MapObjectCategory,
-  { label: string; shortLabel: string; color: string }
-> = {
-  settlement: { label: "Settlement", shortLabel: "S", color: "#f6c177" },
-  dungeon: { label: "Dungeon", shortLabel: "D", color: "#a78bfa" },
-  danger: { label: "Danger", shortLabel: "!", color: "#fb7185" },
-  quest: { label: "Quest", shortLabel: "Q", color: "#67e8f9" },
-  faction: { label: "Faction", shortLabel: "F", color: "#c084fc" },
-  route: { label: "Route", shortLabel: "R", color: "#5eead4" },
-  rumor: { label: "Rumor", shortLabel: "?", color: "#e0e7ff" }
-};
-
-const OBJECT_COLORS = CATEGORY_ORDER.map(
-  (category) => CATEGORY_META[category].color
-);
-
 const TOOLS: Array<{ id: Tool; label: string; icon: LucideIcon }> = [
   { id: "select", label: "Select", icon: MousePointer2 },
   { id: "pan", label: "Pan", icon: Move },
   { id: "marker", label: "Location", icon: MapPin },
   { id: "label", label: "Map Text", icon: Type },
   { id: "line", label: "Route", icon: Waypoints },
-  { id: "freehand", label: "Trail", icon: PenLine }
+  { id: "freehand", label: "Trail", icon: PenLine },
+  { id: "area", label: "Area", icon: Hexagon }
 ];
+
+const AREA_CLOSE_DISTANCE = 14;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
-}
-
-function createId(prefix: string) {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function getCategoryMeta(category: MapObjectCategory) {
-  return CATEGORY_META[category] ?? CATEGORY_META.rumor;
-}
-
-function getObjectDisplayName(object: MapObject) {
-  if (object.type === "label") {
-    return object.text || object.name;
-  }
-
-  return object.name;
-}
-
-function moveObject(object: MapObject, dx: number, dy: number): MapObject {
-  if (object.type === "marker" || object.type === "label") {
-    return {
-      ...object,
-      x: object.x + dx,
-      y: object.y + dy
-    };
-  }
-
-  return {
-    ...object,
-    points: object.points.map((point) => ({
-      x: point.x + dx,
-      y: point.y + dy
-    }))
-  };
 }
 
 function getObjectIcon(type: MapObject["type"]) {
@@ -198,6 +163,10 @@ function getObjectIcon(type: MapObject["type"]) {
 
   if (type === "polyline") {
     return <Waypoints size={16} />;
+  }
+
+  if (type === "area") {
+    return <Hexagon size={16} />;
   }
 
   return <PenLine size={16} />;
@@ -327,6 +296,24 @@ function drawExportObject(
     }
   }
 
+  if (object.type === "area") {
+    const [firstPoint, ...rest] = object.points;
+
+    if (firstPoint) {
+      context.beginPath();
+      context.moveTo(firstPoint.x, firstPoint.y);
+      rest.forEach((point) => context.lineTo(point.x, point.y));
+      context.closePath();
+      context.globalAlpha = object.fillOpacity;
+      context.fillStyle = object.color;
+      context.fill();
+      context.globalAlpha = 1;
+      context.strokeStyle = object.color;
+      context.lineWidth = object.strokeWidth;
+      context.stroke();
+    }
+  }
+
   context.restore();
 }
 
@@ -343,6 +330,7 @@ export function MapEditor({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const campaignFileInputRef = useRef<HTMLInputElement | null>(null);
+  const handoutFileInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const hydratedRef = useRef(false);
@@ -355,8 +343,14 @@ export function MapEditor({
     useState<MapObjectCategory>("settlement");
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, scale: 1 });
   const [draftPath, setDraftPath] = useState<DraftPath | null>(null);
+  const [draftArea, setDraftArea] = useState<Point[] | null>(null);
+  const [areaCursor, setAreaCursor] = useState<Point | null>(null);
   const [status, setStatus] = useState("Ready");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [presentMode, setPresentMode] = useState(false);
+  const [openHandoutId, setOpenHandoutId] = useState<string | null>(null);
+
+  const activeTool: Tool = presentMode ? "pan" : tool;
 
   useEffect(() => {
     setTitle(initialTitle);
@@ -451,6 +445,10 @@ export function MapEditor({
   const selectedObject = objects.find((object) => object.id === selectedId);
   const dmVisibleObjects = objects.filter((object) => object.dmVisible);
   const playerVisibleObjects = objects.filter((object) => object.playerVisible);
+  const visibleObjects = presentMode ? playerVisibleObjects : dmVisibleObjects;
+  const openHandoutObject = openHandoutId
+    ? objects.find((object) => object.id === openHandoutId) ?? null
+    : null;
 
   const screenToWorld = useCallback(
     (event: ReactPointerEvent) => {
@@ -552,26 +550,7 @@ export function MapEditor({
 
   const addMarker = useCallback(
     (point: Point) => {
-      const category = activeCategory;
-      const categoryMeta = getCategoryMeta(category);
-      const markerNumber =
-        objects.filter(
-          (object) => object.type === "marker" && object.category === category
-        ).length + 1;
-      const marker: MapObject = {
-        id: createId("marker"),
-        type: "marker",
-        name: `${categoryMeta.label} ${markerNumber}`,
-        category,
-        x: point.x,
-        y: point.y,
-        radius: 14,
-        color: categoryMeta.color,
-        dmVisible: true,
-        playerVisible: false,
-        notes: ""
-      };
-
+      const marker = createMarker(objects, point, activeCategory);
       setObjects((currentObjects) => [...currentObjects, marker]);
       setSelectedId(marker.id);
       setStatus(`Added ${marker.name}`);
@@ -581,25 +560,7 @@ export function MapEditor({
 
   const addLabel = useCallback(
     (point: Point) => {
-      const category = activeCategory === "route" ? "rumor" : activeCategory;
-      const categoryMeta = getCategoryMeta(category);
-      const labelNumber =
-        objects.filter((object) => object.type === "label").length + 1;
-      const label: MapObject = {
-        id: createId("label"),
-        type: "label",
-        name: `${categoryMeta.label} note ${labelNumber}`,
-        category,
-        text: `${categoryMeta.label} note ${labelNumber}`,
-        x: point.x,
-        y: point.y,
-        fontSize: 28,
-        color: categoryMeta.color,
-        dmVisible: true,
-        playerVisible: false,
-        notes: ""
-      };
-
+      const label = createLabel(objects, point, activeCategory);
       setObjects((currentObjects) => [...currentObjects, label]);
       setSelectedId(label.id);
       setStatus(`Added ${label.name}`);
@@ -609,38 +570,11 @@ export function MapEditor({
 
   const addPathObject = useCallback(
     (path: DraftPath) => {
-      const kind: PathObject["type"] =
-        path.type === "line" ? "polyline" : "freehand";
-      const usefulPoints =
-        path.type === "line"
-          ? path.points.slice(0, 2)
-          : path.points.filter((point, index, points) => {
-              if (index === 0) {
-                return true;
-              }
+      const nextPath = createPathFromDraft(objects, path);
 
-              const previous = points[index - 1];
-              return Math.hypot(point.x - previous.x, point.y - previous.y) > 3;
-            });
-
-      if (usefulPoints.length < 2) {
+      if (!nextPath) {
         return;
       }
-
-      const pathNumber =
-        objects.filter((object) => object.type === kind).length + 1;
-      const nextPath: PathObject = {
-        id: createId(kind),
-        type: kind,
-        name: path.type === "line" ? `Route ${pathNumber}` : `Trail ${pathNumber}`,
-        category: "route",
-        points: usefulPoints,
-        strokeWidth: path.type === "line" ? 5 : 4,
-        color: CATEGORY_META.route.color,
-        dmVisible: true,
-        playerVisible: false,
-        notes: ""
-      };
 
       setObjects((currentObjects) => [...currentObjects, nextPath]);
       setSelectedId(nextPath.id);
@@ -648,6 +582,68 @@ export function MapEditor({
     },
     [objects]
   );
+
+  const finishArea = useCallback(() => {
+    setDraftArea((currentDraft) => {
+      if (currentDraft) {
+        const area = createArea(objects, currentDraft, activeCategory);
+
+        if (area) {
+          setObjects((currentObjects) => [...currentObjects, area]);
+          setSelectedId(area.id);
+          setStatus(`Added ${area.name}`);
+        }
+      }
+
+      return null;
+    });
+    setAreaCursor(null);
+  }, [activeCategory, objects]);
+
+  const cancelArea = useCallback(() => {
+    setDraftArea(null);
+    setAreaCursor(null);
+  }, []);
+
+  // Drop any in-progress area when the tool changes or presentation starts.
+  useEffect(() => {
+    if (tool !== "area" || presentMode) {
+      setDraftArea(null);
+      setAreaCursor(null);
+    }
+  }, [tool, presentMode]);
+
+  // Keyboard shortcuts for area drawing, handouts, and presentation.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && draftArea) {
+        event.preventDefault();
+        finishArea();
+        return;
+      }
+
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (openHandoutId) {
+        setOpenHandoutId(null);
+        return;
+      }
+
+      if (draftArea) {
+        cancelArea();
+        return;
+      }
+
+      if (presentMode) {
+        setPresentMode(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [cancelArea, draftArea, finishArea, openHandoutId, presentMode]);
 
   const updateSelectedObject = useCallback((updates: EditableObjectUpdates) => {
     setObjects((currentObjects) =>
@@ -675,6 +671,66 @@ export function MapEditor({
     );
   }, [selectedId]);
 
+  const setHandoutText = (text: string) => {
+    if (!selectedObject) {
+      return;
+    }
+
+    const image = selectedObject.handout?.image ?? null;
+    updateSelectedObject({
+      handout: text || image ? { text, image } : null
+    });
+  };
+
+  const attachHandoutImage = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setStatus("Choose an image file for the handout");
+      return;
+    }
+
+    const currentText = selectedObject?.handout?.text ?? "";
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const src = String(reader.result);
+      const probe = new Image();
+
+      probe.onload = () => {
+        updateSelectedObject({
+          handout: {
+            text: currentText,
+            image: {
+              name: file.name,
+              src,
+              width: probe.naturalWidth,
+              height: probe.naturalHeight
+            }
+          }
+        });
+        setStatus(`Handout image attached (${file.name})`);
+      };
+
+      probe.onerror = () => setStatus("Handout image could not be loaded");
+      probe.src = src;
+    };
+
+    reader.onerror = () => setStatus("Handout image could not be read");
+    reader.readAsDataURL(file);
+  };
+
+  const clearHandout = () => {
+    updateSelectedObject({ handout: null });
+  };
+
+  const startPan = (event: ReactPointerEvent, target: Element) => {
+    dragRef.current = {
+      kind: "pan",
+      clientX: event.clientX,
+      clientY: event.clientY
+    };
+    target.setPointerCapture(event.pointerId);
+  };
+
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.button !== 0) {
       return;
@@ -682,35 +738,50 @@ export function MapEditor({
 
     const point = screenToWorld(event);
 
-    if (tool === "pan") {
-      dragRef.current = {
-        kind: "pan",
-        clientX: event.clientX,
-        clientY: event.clientY
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
+    if (activeTool === "pan") {
+      startPan(event, event.currentTarget);
       return;
     }
 
-    if (tool === "marker") {
+    if (activeTool === "marker") {
       addMarker(point);
       return;
     }
 
-    if (tool === "label") {
+    if (activeTool === "label") {
       addLabel(point);
       return;
     }
 
-    if (tool === "line") {
+    if (activeTool === "line") {
       setDraftPath({ type: "line", points: [point, point] });
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
 
-    if (tool === "freehand") {
+    if (activeTool === "freehand") {
       setDraftPath({ type: "freehand", points: [point] });
       event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (activeTool === "area") {
+      // Click near the first vertex to close, otherwise drop a new vertex.
+      if (draftArea && draftArea.length >= 3) {
+        const first = draftArea[0];
+        const closeDistance = AREA_CLOSE_DISTANCE / view.scale;
+
+        if (Math.hypot(point.x - first.x, point.y - first.y) <= closeDistance) {
+          finishArea();
+          return;
+        }
+      }
+
+      setDraftArea((currentDraft) =>
+        currentDraft ? [...currentDraft, point] : [point]
+      );
+      setAreaCursor(point);
+      setStatus("Area: click the first point or press Enter to finish");
       return;
     }
 
@@ -727,19 +798,31 @@ export function MapEditor({
 
     event.stopPropagation();
 
-    if (tool === "pan") {
-      dragRef.current = {
-        kind: "pan",
-        clientX: event.clientX,
-        clientY: event.clientY
-      };
-      svgRef.current?.setPointerCapture(event.pointerId);
+    if (presentMode) {
+      if (hasHandout(object)) {
+        setOpenHandoutId(object.id);
+      } else {
+        startPan(event, svgRef.current ?? event.currentTarget);
+      }
+      return;
+    }
+
+    if (activeTool === "area") {
+      // Forward to the canvas handler so vertices can be placed over objects.
+      handlePointerDown(
+        event as unknown as ReactPointerEvent<SVGSVGElement>
+      );
+      return;
+    }
+
+    if (activeTool === "pan") {
+      startPan(event, svgRef.current ?? event.currentTarget);
       return;
     }
 
     setSelectedId(object.id);
 
-    if (tool !== "select") {
+    if (activeTool !== "select") {
       return;
     }
 
@@ -780,6 +863,11 @@ export function MapEditor({
             : object
         )
       );
+      return;
+    }
+
+    if (activeTool === "area" && draftArea) {
+      setAreaCursor(screenToWorld(event));
       return;
     }
 
@@ -938,8 +1026,7 @@ export function MapEditor({
     [drawMapSurface, worldSize.height, worldSize.width]
   );
 
-  const getExportBaseName = () =>
-    title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "map";
+  const getExportBaseName = () => exportBaseName(title);
 
   const downloadCanvasAsPng = (canvas: HTMLCanvasElement, filename: string) => {
     const link = document.createElement("a");
@@ -1156,7 +1243,7 @@ export function MapEditor({
   };
 
   return (
-    <main className="editor-shell">
+    <main className={`editor-shell ${presentMode ? "presenting" : ""}`}>
       <header className="topbar">
         <div className="brand-area">
           <Layers3 size={22} />
@@ -1164,82 +1251,102 @@ export function MapEditor({
             aria-label="Campaign title"
             className="title-input"
             onChange={(event) => setTitle(event.target.value)}
+            readOnly={presentMode}
             value={title}
           />
+          {presentMode ? <span className="present-badge">Player view</span> : null}
         </div>
 
-        <div className="toolbar" aria-label="Map tools">
-          <button
-            className="tool-button map-option-button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Load image"
-            type="button"
-          >
-            <ImagePlus size={18} />
-            <span>Load</span>
-          </button>
-          <input
-            ref={fileInputRef}
-            accept="image/*"
-            className="hidden-input"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
+        <input
+          ref={fileInputRef}
+          accept="image/*"
+          className="hidden-input"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
 
-              if (file) {
-                handleImageFile(file);
-              }
-            }}
-            type="file"
-          />
-          <input
-            ref={campaignFileInputRef}
-            accept="application/json,.json"
-            className="hidden-input"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
+            if (file) {
+              handleImageFile(file);
+            }
+          }}
+          type="file"
+        />
+        <input
+          ref={campaignFileInputRef}
+          accept="application/json,.json"
+          className="hidden-input"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
 
-              if (file) {
-                void loadCampaignFile(file);
-              }
+            if (file) {
+              void loadCampaignFile(file);
+            }
 
-              event.target.value = "";
-            }}
-            type="file"
-          />
+            event.target.value = "";
+          }}
+          type="file"
+        />
+        <input
+          ref={handoutFileInputRef}
+          accept="image/*"
+          className="hidden-input"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
 
-          <label className="category-select-label">
-            <MapPin size={16} />
-            <select
-              aria-label="New map note category"
-              onChange={(event) =>
-                setActiveCategory(event.target.value as MapObjectCategory)
-              }
-              value={activeCategory}
+            if (file) {
+              attachHandoutImage(file);
+            }
+
+            event.target.value = "";
+          }}
+          type="file"
+        />
+
+        {!presentMode ? (
+          <div className="toolbar" aria-label="Map tools">
+            <button
+              className="tool-button map-option-button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Load image"
+              type="button"
             >
-              {CATEGORY_ORDER.map((category) => (
-                <option key={category} value={category}>
-                  {getCategoryMeta(category).label}
-                </option>
-              ))}
-            </select>
-          </label>
+              <ImagePlus size={18} />
+              <span>Load</span>
+            </button>
 
-          <div className="segmented-tools">
-            {TOOLS.map(({ id, label, icon: Icon }) => (
-              <button
-                aria-pressed={tool === id}
-                className="tool-button icon-tool"
-                key={id}
-                onClick={() => setTool(id)}
-                title={label}
-                type="button"
+            <label className="category-select-label">
+              <MapPin size={16} />
+              <select
+                aria-label="New map note category"
+                onChange={(event) =>
+                  setActiveCategory(event.target.value as MapObjectCategory)
+                }
+                value={activeCategory}
               >
-                <Icon size={18} />
-                <span>{label}</span>
-              </button>
-            ))}
+                {CATEGORY_ORDER.map((category) => (
+                  <option key={category} value={category}>
+                    {getCategoryMeta(category).label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="segmented-tools">
+              {TOOLS.map(({ id, label, icon: Icon }) => (
+                <button
+                  aria-pressed={tool === id}
+                  className="tool-button icon-tool"
+                  key={id}
+                  onClick={() => setTool(id)}
+                  title={label}
+                  type="button"
+                >
+                  <Icon size={18} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="toolbar right-toolbar">
           <button
@@ -1267,27 +1374,53 @@ export function MapEditor({
           >
             <Maximize2 size={18} />
           </button>
-          {persistLocally ? (
+          {presentMode ? (
             <button
-              className="tool-button icon-only"
-              onClick={resetCampaign}
-              title="New campaign (clears the saved local draft)"
+              className="tool-button map-option-button present-exit"
+              onClick={() => setPresentMode(false)}
+              title="Exit player view"
               type="button"
             >
-              <FilePlus2 size={18} />
+              <X size={18} />
+              <span>Exit</span>
             </button>
-          ) : null}
-          <button
-            className="tool-button map-option-button"
-            onClick={saveDraft}
-            title={
-              persistLocally ? "Save to this browser" : "Save draft"
-            }
-            type="button"
-          >
-            <Save size={18} />
-            <span>{saveLabel}</span>
-          </button>
+          ) : (
+            <>
+              {persistLocally ? (
+                <button
+                  className="tool-button icon-only"
+                  onClick={resetCampaign}
+                  title="New campaign (clears the saved local draft)"
+                  type="button"
+                >
+                  <FilePlus2 size={18} />
+                </button>
+              ) : null}
+              <button
+                className="tool-button map-option-button"
+                onClick={saveDraft}
+                title={persistLocally ? "Save to this browser" : "Save draft"}
+                type="button"
+              >
+                <Save size={18} />
+                <span>{saveLabel}</span>
+              </button>
+              <button
+                className="tool-button map-option-button"
+                onClick={() => {
+                  setSelectedId(null);
+                  setExportMenuOpen(false);
+                  setPresentMode(true);
+                  setStatus("Player view — only shared notes are shown");
+                }}
+                title="Player view for screen sharing"
+                type="button"
+              >
+                <MonitorPlay size={18} />
+                <span>Present</span>
+              </button>
+            </>
+          )}
           <div className="export-menu" ref={exportMenuRef}>
             <button
               aria-label="Export options"
@@ -1392,6 +1525,7 @@ export function MapEditor({
       </header>
 
       <section className="workspace">
+        {!presentMode ? (
         <aside className="sidebar" aria-label="Known locations and map notes">
           <div className="sidebar-section">
             <div className="section-heading">
@@ -1426,7 +1560,12 @@ export function MapEditor({
                       </span>
                       {getObjectIcon(object.type)}
                       <span className="object-copy">
-                        <span>{getObjectDisplayName(object)}</span>
+                        <span className="object-name-row">
+                          {getObjectDisplayName(object)}
+                          {hasHandout(object) ? (
+                            <Paperclip className="handout-flag" size={12} />
+                          ) : null}
+                        </span>
                         <small>{getCategoryMeta(object.category).label}</small>
                       </span>
                     </button>
@@ -1608,7 +1747,8 @@ export function MapEditor({
                 ) : null}
 
                 {selectedObject.type === "polyline" ||
-                selectedObject.type === "freehand" ? (
+                selectedObject.type === "freehand" ||
+                selectedObject.type === "area" ? (
                   <label>
                     <span>Stroke</span>
                     <input
@@ -1625,6 +1765,74 @@ export function MapEditor({
                   </label>
                 ) : null}
 
+                {selectedObject.type === "area" ? (
+                  <label>
+                    <span>Fill</span>
+                    <input
+                      max="80"
+                      min="0"
+                      onChange={(event) =>
+                        updateSelectedObject({
+                          fillOpacity: Number(event.target.value) / 100
+                        })
+                      }
+                      type="range"
+                      value={Math.round(selectedObject.fillOpacity * 100)}
+                    />
+                  </label>
+                ) : null}
+
+                <div className="handout-section">
+                  <div className="handout-heading">
+                    <Paperclip size={14} />
+                    <span>Player handout</span>
+                  </div>
+                  <p className="handout-hint">
+                    Shown when you click this note in Present (player view).
+                  </p>
+                  <textarea
+                    aria-label="Handout text"
+                    onChange={(event) => setHandoutText(event.target.value)}
+                    placeholder="Read-aloud text, riddle, letter…"
+                    rows={2}
+                    value={selectedObject.handout?.text ?? ""}
+                  />
+                  {selectedObject.handout?.image ? (
+                    <div className="handout-image-row">
+                      <img
+                        alt="Handout"
+                        className="handout-thumb"
+                        src={selectedObject.handout.image.src}
+                      />
+                      <span className="handout-image-name">
+                        {selectedObject.handout.image.name}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="handout-actions">
+                    <button
+                      className="tool-button"
+                      onClick={() => handoutFileInputRef.current?.click()}
+                      type="button"
+                    >
+                      <ImagePlus size={15} />
+                      <span>
+                        {selectedObject.handout?.image ? "Replace" : "Image"}
+                      </span>
+                    </button>
+                    {hasHandout(selectedObject) ? (
+                      <button
+                        className="tool-button"
+                        onClick={clearHandout}
+                        type="button"
+                      >
+                        <X size={15} />
+                        <span>Clear</span>
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
                 <button
                   className="danger-button"
                   onClick={deleteSelectedObject}
@@ -1639,6 +1847,7 @@ export function MapEditor({
             )}
           </div>
         </aside>
+        ) : null}
 
         <div
           className="stage-viewport"
@@ -1700,18 +1909,50 @@ export function MapEditor({
                 width={worldSize.width}
               />
 
-              {objects.map((object) => {
-                if (!object.dmVisible) {
-                  return null;
-                }
-
-                const isSelected = selectedId === object.id;
+              {visibleObjects.map((object) => {
+                const isSelected = !presentMode && selectedId === object.id;
+                const clickable = presentMode && hasHandout(object);
+                const groupClass = `map-object ${
+                  isSelected ? "selected" : ""
+                } ${clickable ? "clickable" : ""}`;
                 const category = getCategoryMeta(object.category);
+
+                if (object.type === "area") {
+                  const polygonPoints = object.points
+                    .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+                    .join(" ");
+
+                  return (
+                    <g
+                      className={groupClass}
+                      key={object.id}
+                      onPointerDown={(event) =>
+                        handleObjectPointerDown(event, object)
+                      }
+                    >
+                      {isSelected ? (
+                        <polygon
+                          className="selection-path"
+                          fill="none"
+                          points={polygonPoints}
+                        />
+                      ) : null}
+                      <polygon
+                        fill={object.color}
+                        fillOpacity={object.fillOpacity}
+                        points={polygonPoints}
+                        stroke={object.color}
+                        strokeLinejoin="round"
+                        strokeWidth={object.strokeWidth}
+                      />
+                    </g>
+                  );
+                }
 
                 if (object.type === "marker") {
                   return (
                     <g
-                      className={`map-object ${isSelected ? "selected" : ""}`}
+                      className={groupClass}
                       key={object.id}
                       onPointerDown={(event) =>
                         handleObjectPointerDown(event, object)
@@ -1758,7 +1999,7 @@ export function MapEditor({
                 if (object.type === "label") {
                   return (
                     <g
-                      className={`map-object ${isSelected ? "selected" : ""}`}
+                      className={groupClass}
                       key={object.id}
                       onPointerDown={(event) =>
                         handleObjectPointerDown(event, object)
@@ -1791,7 +2032,7 @@ export function MapEditor({
 
                 return (
                   <g
-                    className={`map-object ${isSelected ? "selected" : ""}`}
+                    className={groupClass}
                     key={object.id}
                     onPointerDown={(event) =>
                       handleObjectPointerDown(event, object)
@@ -1824,10 +2065,75 @@ export function MapEditor({
                     "draft-path"
                   )
                 : null}
+
+              {!presentMode && draftArea && draftArea.length > 0 ? (
+                <g className="draft-area">
+                  <polyline
+                    fill="rgba(103, 232, 249, 0.16)"
+                    points={[...draftArea, ...(areaCursor ? [areaCursor] : [])]
+                      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+                      .join(" ")}
+                    stroke="#67e8f9"
+                    strokeDasharray="10 8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={3}
+                  />
+                  {draftArea.map((point, index) => (
+                    <circle
+                      cx={point.x}
+                      cy={point.y}
+                      key={index}
+                      r={index === 0 ? 7 : 4}
+                      className={index === 0 ? "draft-area-start" : "draft-area-vertex"}
+                    />
+                  ))}
+                </g>
+              ) : null}
             </svg>
           </div>
         </div>
       </section>
+
+      {openHandoutObject && hasHandout(openHandoutObject) ? (
+        <div
+          className="handout-overlay"
+          onClick={() => setOpenHandoutId(null)}
+          role="presentation"
+        >
+          <div
+            className="handout-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Handout: ${openHandoutObject.name}`}
+          >
+            <div className="handout-modal-head">
+              <strong>{getObjectDisplayName(openHandoutObject)}</strong>
+              <button
+                aria-label="Close handout"
+                className="tool-button icon-only"
+                onClick={() => setOpenHandoutId(null)}
+                type="button"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {openHandoutObject.handout?.image ? (
+              <img
+                alt={openHandoutObject.handout.image.name}
+                className="handout-modal-image"
+                src={openHandoutObject.handout.image.src}
+              />
+            ) : null}
+            {openHandoutObject.handout?.text ? (
+              <p className="handout-modal-text">
+                {openHandoutObject.handout.text}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

@@ -691,6 +691,207 @@ button {
   pointer-events: none;
 }
 
+.draft-area {
+  pointer-events: none;
+}
+
+.draft-area-vertex {
+  fill: #67e8f9;
+  stroke: #0b1024;
+  stroke-width: 2px;
+}
+
+.draft-area-start {
+  fill: #0b1024;
+  stroke: #67e8f9;
+  stroke-width: 3px;
+}
+
+/* Handout indicators */
+.object-name-row {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.object-name-row > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.handout-flag {
+  color: var(--accent-strong);
+  flex: 0 0 auto;
+}
+
+.handout-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.handout-heading {
+  align-items: center;
+  color: var(--accent-strong);
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.handout-hint {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0;
+}
+
+.handout-section textarea {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  line-height: 1.4;
+  min-height: 52px;
+  outline: none;
+  padding: 8px 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.handout-section textarea:focus {
+  border-color: rgba(103, 232, 249, 0.62);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.handout-image-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.handout-thumb {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  height: 40px;
+  object-fit: cover;
+  width: 56px;
+}
+
+.handout-image-name {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.handout-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.handout-actions .tool-button {
+  width: 100%;
+}
+
+/* Presentation (player view) */
+.present-badge {
+  background: rgba(94, 234, 212, 0.16);
+  border: 1px solid rgba(94, 234, 212, 0.46);
+  border-radius: 999px;
+  color: #ccfbf1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.present-exit {
+  background: rgba(94, 234, 212, 0.14);
+  border-color: rgba(94, 234, 212, 0.46);
+  color: #ccfbf1;
+}
+
+.presenting .workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.presenting .map-overlay {
+  cursor: grab;
+}
+
+.map-object.clickable {
+  cursor: pointer;
+}
+
+.presenting .map-object:not(.clickable) {
+  cursor: grab;
+}
+
+.handout-overlay {
+  align-items: center;
+  background: rgba(4, 7, 18, 0.78);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 60;
+}
+
+.handout-modal {
+  background:
+    linear-gradient(180deg, rgba(29, 36, 66, 0.98), rgba(14, 20, 42, 0.98));
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+  max-height: min(86vh, 820px);
+  max-width: min(720px, 100%);
+  overflow: auto;
+  padding: 18px;
+}
+
+.handout-modal-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.handout-modal-head strong {
+  font-size: 18px;
+}
+
+.handout-modal-image {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: block;
+  height: auto;
+  max-height: 64vh;
+  object-fit: contain;
+  width: 100%;
+}
+
+.handout-modal-text {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.55;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 1180px) {
   .topbar {
     align-items: center;

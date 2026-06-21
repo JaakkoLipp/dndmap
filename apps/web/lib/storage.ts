@@ -1,5 +1,6 @@
 import type {
   CampaignMapSnapshot,
+  HandoutContent,
   MapImageState,
   MapObject,
   MapObjectCategory,
@@ -89,6 +90,21 @@ function normalizeImage(value: unknown): MapImageState | null {
   };
 }
 
+function normalizeHandout(value: unknown): HandoutContent | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const text = toStringValue(value.text, "");
+  const image = normalizeImage(value.image);
+
+  if (!text && !image) {
+    return null;
+  }
+
+  return { text, image };
+}
+
 function normalizeObject(value: unknown): MapObject | null {
   if (!isRecord(value)) {
     return null;
@@ -102,7 +118,8 @@ function normalizeObject(value: unknown): MapObject | null {
     category: toCategory(value.category),
     dmVisible: toBoolean(value.dmVisible, true),
     playerVisible: toBoolean(value.playerVisible, false),
-    notes: toStringValue(value.notes, "")
+    notes: toStringValue(value.notes, ""),
+    handout: normalizeHandout(value.handout)
   };
 
   if (type === "marker") {
@@ -138,6 +155,25 @@ function normalizeObject(value: unknown): MapObject | null {
       type,
       points,
       strokeWidth: Math.max(1, toFiniteNumber(value.strokeWidth, 5))
+    };
+  }
+
+  if (type === "area") {
+    const points = normalizePoints(value.points);
+
+    if (points.length < 3) {
+      return null;
+    }
+
+    return {
+      ...base,
+      type: "area",
+      points,
+      strokeWidth: Math.max(1, toFiniteNumber(value.strokeWidth, 3)),
+      fillOpacity: Math.min(
+        1,
+        Math.max(0, toFiniteNumber(value.fillOpacity, 0.22))
+      )
     };
   }
 
