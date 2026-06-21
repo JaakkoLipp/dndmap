@@ -12,6 +12,7 @@ There is no backend, auth system, database, Docker compose stack, hosted campaig
 - `apps/web/components/MapEditor.tsx` contains the browser-side SVG editor.
 - `apps/web/lib/api.ts` contains shared editor types only.
 - `apps/web/lib/pdfExport.ts` contains the browser-side PDF export helper.
+- `apps/web/lib/storage.ts` handles local autosave/restore and campaign `.json` save/load (all client-side, no backend).
 
 ## Commands
 

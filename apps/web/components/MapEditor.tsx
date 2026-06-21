@@ -4,7 +4,9 @@ import {
   Download,
   Eye,
   EyeOff,
+  FilePlus2,
   FileText,
+  FolderOpen,
   ImagePlus,
   Layers3,
   MapPin,
@@ -42,8 +44,17 @@ import type {
   Point
 } from "../lib/api";
 import { downloadCanvasAsPdf } from "../lib/pdfExport";
+import {
+  clearStoredSnapshot,
+  downloadCampaignFile,
+  loadStoredSnapshot,
+  readCampaignFile,
+  saveStoredSnapshot
+} from "../lib/storage";
 
 type Tool = "select" | "pan" | "marker" | "label" | "line" | "freehand";
+
+type ExportAudience = "dm" | "player";
 
 type ViewState = {
   x: number;
@@ -248,8 +259,14 @@ function drawGridBackground(
   }
 }
 
-function drawExportObject(context: CanvasRenderingContext2D, object: MapObject) {
-  if (!object.dmVisible) {
+function drawExportObject(
+  context: CanvasRenderingContext2D,
+  object: MapObject,
+  audience: ExportAudience
+) {
+  const visible = audience === "player" ? object.playerVisible : object.dmVisible;
+
+  if (!visible) {
     return;
   }
 
@@ -321,11 +338,14 @@ export function MapEditor({
   onUploadImage,
   saveLabel = "Save"
 }: MapEditorProps = {}) {
+  const persistLocally = !onSave;
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const campaignFileInputRef = useRef<HTMLInputElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const hydratedRef = useRef(false);
   const [title, setTitle] = useState(initialTitle);
   const [image, setImage] = useState<MapImageState | null>(initialImage);
   const [objects, setObjects] = useState<MapObject[]>(initialObjects);
@@ -350,6 +370,45 @@ export function MapEditor({
     setObjects(initialObjects);
     setSelectedId(null);
   }, [initialObjects]);
+
+  // Restore the most recent local draft once on mount (browser-only mode).
+  useEffect(() => {
+    if (!persistLocally) {
+      hydratedRef.current = true;
+      return;
+    }
+
+    const stored = loadStoredSnapshot();
+
+    if (stored) {
+      setTitle(stored.title);
+      setImage(stored.image);
+      setObjects(stored.objects);
+      setSelectedId(null);
+      setStatus("Restored local campaign");
+    }
+
+    hydratedRef.current = true;
+  }, [persistLocally]);
+
+  // Debounced autosave of the working draft to local storage.
+  useEffect(() => {
+    if (!persistLocally || !hydratedRef.current) {
+      return undefined;
+    }
+
+    const handle = window.setTimeout(() => {
+      const result = saveStoredSnapshot(
+        makeSnapshot(title, image, objects, view)
+      );
+
+      if (!result.ok && result.error) {
+        setStatus(result.error);
+      }
+    }, 600);
+
+    return () => window.clearTimeout(handle);
+  }, [persistLocally, title, image, objects, view]);
 
   useEffect(() => {
     if (!exportMenuOpen) {
@@ -816,7 +875,7 @@ export function MapEditor({
   };
 
   const drawMapSurface = useCallback(
-    async (context: CanvasRenderingContext2D) => {
+    async (context: CanvasRenderingContext2D, audience: ExportAudience) => {
       if (image) {
         const exportImage = await loadImageElement(image.src);
         context.drawImage(exportImage, 0, 0, worldSize.width, worldSize.height);
@@ -824,12 +883,13 @@ export function MapEditor({
         drawGridBackground(context, worldSize.width, worldSize.height);
       }
 
-      objects.forEach((object) => drawExportObject(context, object));
+      objects.forEach((object) => drawExportObject(context, object, audience));
     },
     [image, objects, worldSize.height, worldSize.width]
   );
 
-  const renderViewportCanvas = useCallback(async () => {
+  const renderViewportCanvas = useCallback(
+    async (audience: ExportAudience) => {
     const bounds = viewportRef.current?.getBoundingClientRect();
 
     if (!bounds) {
@@ -852,26 +912,31 @@ export function MapEditor({
     context.save();
     context.translate(view.x, view.y);
     context.scale(view.scale, view.scale);
-    await drawMapSurface(context);
+    await drawMapSurface(context, audience);
     context.restore();
     return canvas;
-  }, [drawMapSurface, view.scale, view.x, view.y]);
+    },
+    [drawMapSurface, view.scale, view.x, view.y]
+  );
 
-  const renderFullMapCanvas = useCallback(async () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.floor(worldSize.width));
-    canvas.height = Math.max(1, Math.floor(worldSize.height));
-    const context = canvas.getContext("2d");
+  const renderFullMapCanvas = useCallback(
+    async (audience: ExportAudience) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(worldSize.width));
+      canvas.height = Math.max(1, Math.floor(worldSize.height));
+      const context = canvas.getContext("2d");
 
-    if (!context) {
-      return null;
-    }
+      if (!context) {
+        return null;
+      }
 
-    context.fillStyle = "#080d1f";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    await drawMapSurface(context);
-    return canvas;
-  }, [drawMapSurface, worldSize.height, worldSize.width]);
+      context.fillStyle = "#080d1f";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await drawMapSurface(context, audience);
+      return canvas;
+    },
+    [drawMapSurface, worldSize.height, worldSize.width]
+  );
 
   const getExportBaseName = () =>
     title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "map";
@@ -885,7 +950,7 @@ export function MapEditor({
 
   const exportPng = async () => {
     setStatus("Rendering PNG");
-    const canvas = await renderViewportCanvas();
+    const canvas = await renderViewportCanvas("dm");
 
     if (!canvas) {
       setStatus("PNG export is not available");
@@ -898,7 +963,7 @@ export function MapEditor({
 
   const exportPdf = async () => {
     setStatus("Rendering PDF");
-    const canvas = await renderViewportCanvas();
+    const canvas = await renderViewportCanvas("dm");
 
     if (!canvas) {
       setStatus("PDF export is not available");
@@ -914,7 +979,7 @@ export function MapEditor({
 
   const exportFullMapPng = async () => {
     setStatus("Rendering full map");
-    const canvas = await renderFullMapCanvas();
+    const canvas = await renderFullMapCanvas("dm");
 
     if (!canvas) {
       setStatus("Full-map export is not available");
@@ -923,6 +988,61 @@ export function MapEditor({
 
     downloadCanvasAsPng(canvas, `${getExportBaseName()}-full-map.png`);
     setStatus("Full map PNG exported");
+  };
+
+  const exportPlayerMapPng = async () => {
+    setStatus("Rendering player map");
+    const canvas = await renderFullMapCanvas("player");
+
+    if (!canvas) {
+      setStatus("Player-map export is not available");
+      return;
+    }
+
+    downloadCanvasAsPng(canvas, `${getExportBaseName()}-player-map.png`);
+    setStatus(
+      playerVisibleObjects.length === 0
+        ? "Player map exported (no shared notes yet)"
+        : "Player map PNG exported"
+    );
+  };
+
+  const exportPlayerMapPdf = async () => {
+    setStatus("Rendering player map");
+    const canvas = await renderFullMapCanvas("player");
+
+    if (!canvas) {
+      setStatus("Player-map export is not available");
+      return;
+    }
+
+    downloadCanvasAsPdf(canvas, `${getExportBaseName()}-player-map.pdf`);
+    setStatus("Player map PDF exported");
+  };
+
+  const saveCampaignFile = () => {
+    downloadCampaignFile(
+      makeSnapshot(title, image, objects, view),
+      `${getExportBaseName()}-campaign.json`
+    );
+    setStatus("Campaign file saved");
+  };
+
+  const loadCampaignFile = async (file: File) => {
+    setStatus(`Loading ${file.name}`);
+
+    try {
+      const snapshot = await readCampaignFile(file);
+      setTitle(snapshot.title);
+      setImage(snapshot.image);
+      setObjects(snapshot.objects);
+      setSelectedId(null);
+      setStatus(`Loaded ${file.name}`);
+    } catch (error) {
+      setStatus(
+        error instanceof Error ? error.message : "Campaign file is invalid"
+      );
+    }
   };
 
   const saveDraft = async () => {
@@ -935,10 +1055,31 @@ export function MapEditor({
         setStatus(`Saved ${new Date().toLocaleTimeString()}`);
         return;
       }
-      setStatus("Local draft updated");
+
+      const result = saveStoredSnapshot(snapshot);
+      setStatus(
+        result.ok
+          ? `Saved locally ${new Date().toLocaleTimeString()}`
+          : result.error ?? "Save failed"
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Save failed");
     }
+  };
+
+  const resetCampaign = () => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Clear the current map and the saved local draft?")
+    ) {
+      return;
+    }
+
+    clearStoredSnapshot();
+    setObjects(EMPTY_MAP_OBJECTS);
+    setImage(null);
+    setSelectedId(null);
+    setStatus("Cleared local campaign");
   };
 
   const deleteSelectedObject = () => {
@@ -1050,6 +1191,21 @@ export function MapEditor({
             }}
             type="file"
           />
+          <input
+            ref={campaignFileInputRef}
+            accept="application/json,.json"
+            className="hidden-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+
+              if (file) {
+                void loadCampaignFile(file);
+              }
+
+              event.target.value = "";
+            }}
+            type="file"
+          />
 
           <label className="category-select-label">
             <MapPin size={16} />
@@ -1111,10 +1267,22 @@ export function MapEditor({
           >
             <Maximize2 size={18} />
           </button>
+          {persistLocally ? (
+            <button
+              className="tool-button icon-only"
+              onClick={resetCampaign}
+              title="New campaign (clears the saved local draft)"
+              type="button"
+            >
+              <FilePlus2 size={18} />
+            </button>
+          ) : null}
           <button
             className="tool-button map-option-button"
             onClick={saveDraft}
-            title="Save draft"
+            title={
+              persistLocally ? "Save to this browser" : "Save draft"
+            }
             type="button"
           >
             <Save size={18} />
@@ -1135,6 +1303,7 @@ export function MapEditor({
             </button>
             {exportMenuOpen ? (
               <div className="export-menu-popover" role="menu">
+                <span className="export-menu-group">DM current view</span>
                 <button
                   onClick={() => {
                     setExportMenuOpen(false);
@@ -1166,7 +1335,55 @@ export function MapEditor({
                   type="button"
                 >
                   <Maximize2 size={16} />
-                  <span>Full PNG</span>
+                  <span>Full map PNG</span>
+                </button>
+
+                <span className="export-menu-group">Player handout</span>
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void exportPlayerMapPng();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Users size={16} />
+                  <span>Player PNG</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    void exportPlayerMapPdf();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <FileText size={16} />
+                  <span>Player PDF</span>
+                </button>
+
+                <span className="export-menu-group">Campaign file</span>
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    saveCampaignFile();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Save size={16} />
+                  <span>Save .json</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setExportMenuOpen(false);
+                    campaignFileInputRef.current?.click();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  <FolderOpen size={16} />
+                  <span>Load .json</span>
                 </button>
               </div>
             ) : null}

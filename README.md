@@ -8,7 +8,11 @@ The app is now just a Next.js frontend. It loads images locally in the browser, 
 
 - Browser-only map editor with image loading, pan/zoom, markers, labels, routes, and freehand trails.
 - DM/player visibility controls for map notes.
-- Client-side PNG and PDF export of the current view, plus full-map PNG export.
+- Automatic local autosave: the working map is restored in the same browser after a reload. Use **New campaign** to start fresh and clear the saved draft.
+- Portable campaign files: save the whole map (title, image, and notes) to a `.json` file and load it back later or on another machine.
+- Client-side exports:
+  - DM PNG/PDF of the current view and a full-map PNG.
+  - Player handout PNG/PDF rendering only the notes you have shared with players — handy for posting in Discord.
 
 ## Run Locally
 
@@ -48,4 +52,5 @@ apps/web/
   components/MapEditor.tsx
   lib/api.ts           # shared editor types only
   lib/pdfExport.ts     # browser-side PDF export helper
+  lib/storage.ts       # local autosave + campaign file save/load
 ```
