@@ -11,7 +11,10 @@ There is no backend, auth system, database, Docker compose stack, hosted campaig
 - `apps/web/app/page.tsx` loads the editor using `dynamic(..., { ssr: false })`.
 - `apps/web/components/MapEditor.tsx` contains the browser-side SVG editor.
 - `apps/web/lib/api.ts` contains shared editor types only.
+- `apps/web/lib/mapObjects.ts` holds map-note factories, category metadata, and geometry helpers (pure, unit-tested).
 - `apps/web/lib/pdfExport.ts` contains the browser-side PDF export helper.
+- `apps/web/lib/storage.ts` handles local autosave/restore and campaign `.json` save/load (all client-side, no backend).
+- Present (player view) mode and per-note handouts are part of the stateless, screen-share workflow — there is still no backend or realtime layer.
 
 ## Commands
 
@@ -21,4 +24,5 @@ npm install
 npm run dev
 npm run typecheck
 npm run lint
+npm test
 ```

@@ -19,6 +19,11 @@ export type MapObjectCategory =
   | "route"
   | "rumor";
 
+export type HandoutContent = {
+  text: string;
+  image: MapImageState | null;
+};
+
 type BaseMapObject = {
   id: string;
   name: string;
@@ -27,6 +32,7 @@ type BaseMapObject = {
   dmVisible: boolean;
   playerVisible: boolean;
   notes: string;
+  handout?: HandoutContent | null;
 };
 
 export type MarkerObject = BaseMapObject & {
@@ -50,12 +56,24 @@ export type PathObject = BaseMapObject & {
   strokeWidth: number;
 };
 
-export type MapObject = MarkerObject | LabelObject | PathObject;
+export type AreaObject = BaseMapObject & {
+  type: "area";
+  points: Point[];
+  strokeWidth: number;
+  fillOpacity: number;
+  // When true the area cuts a hole in the fog of war instead of being a
+  // decorative region.
+  isReveal?: boolean;
+};
+
+export type MapObject = MarkerObject | LabelObject | PathObject | AreaObject;
 
 export type CampaignMapSnapshot = {
   title: string;
   image: MapImageState | null;
   objects: MapObject[];
+  // Fog of war hides the map outside reveal areas in player-facing views.
+  fogEnabled?: boolean;
   viewport: {
     x: number;
     y: number;
