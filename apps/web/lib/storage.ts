@@ -173,7 +173,8 @@ function normalizeObject(value: unknown): MapObject | null {
       fillOpacity: Math.min(
         1,
         Math.max(0, toFiniteNumber(value.fillOpacity, 0.22))
-      )
+      ),
+      isReveal: toBoolean(value.isReveal, false)
     };
   }
 
@@ -197,6 +198,7 @@ export function normalizeSnapshot(value: unknown): CampaignMapSnapshot | null {
     objects: value.objects
       .map((object) => normalizeObject(object))
       .filter((object): object is MapObject => object !== null),
+    fogEnabled: toBoolean(value.fogEnabled, false),
     viewport: {
       x: toFiniteNumber(viewport.x, 0),
       y: toFiniteNumber(viewport.y, 0),

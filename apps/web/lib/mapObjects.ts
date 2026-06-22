@@ -188,26 +188,31 @@ export function createPathFromDraft(
 export function createArea(
   objects: MapObject[],
   points: Point[],
-  category: MapObjectCategory
+  category: MapObjectCategory,
+  isReveal = false
 ): AreaObject | null {
   if (points.length < 3) {
     return null;
   }
 
   const meta = getCategoryMeta(category);
-  const areaNumber = countOfType(objects, "area") + 1;
+  const sameKind = objects.filter(
+    (object) => object.type === "area" && Boolean(object.isReveal) === isReveal
+  ).length;
+  const areaNumber = sameKind + 1;
 
   return {
     id: createId("area"),
     type: "area",
-    name: `Region ${areaNumber}`,
+    name: isReveal ? `Reveal ${areaNumber}` : `Region ${areaNumber}`,
     category,
     points,
     strokeWidth: 3,
     fillOpacity: 0.22,
     color: meta.color,
     dmVisible: true,
-    playerVisible: false,
-    notes: ""
+    playerVisible: isReveal,
+    notes: "",
+    isReveal
   };
 }

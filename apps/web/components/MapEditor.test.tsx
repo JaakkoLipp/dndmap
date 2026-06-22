@@ -28,6 +28,28 @@ describe("MapEditor tool selection", () => {
     expect(areaTool).toHaveAttribute("aria-pressed", "true");
     expect(getToolButton("Select")).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("exposes the fog-of-war reveal tool", () => {
+    render(<MapEditor />);
+
+    const revealTool = getToolButton("Reveal");
+    fireEvent.click(revealTool);
+
+    expect(revealTool).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("MapEditor fog of war", () => {
+  it("toggles fog of war from the toolbar", () => {
+    render(<MapEditor />);
+
+    const fogToggle = screen.getByRole("button", { name: /Fog of war/ });
+    expect(fogToggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(fogToggle);
+
+    expect(fogToggle).toHaveAttribute("aria-pressed", "true");
+  });
 });
 
 describe("MapEditor object editing", () => {

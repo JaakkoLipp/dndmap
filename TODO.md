@@ -11,7 +11,10 @@ The project is intentionally scoped as a stateless browser map editor.
 - [x] Add a Present (player view) mode for screen-sharing only the shared notes.
 - [x] Add focused frontend tests for tool selection, object editing, and persistence (Vitest).
 
+- [x] Fog-of-war reveal that masks unexplored regions in Present mode and player exports.
+- [x] Touch/gesture support for two-finger pan and pinch zoom on tablets.
+
 ## Ideas
 
-- [ ] Fog-of-war reveal that masks unexplored regions in Present mode.
-- [ ] Touch/gesture support for two-finger pan and pinch zoom on tablets.
+- [ ] Soft/blurred fog edges instead of hard polygon cut-outs.
+- [ ] Measure tool for distances using a configurable map scale.

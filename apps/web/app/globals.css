@@ -695,6 +695,20 @@ button {
   pointer-events: none;
 }
 
+.fog-layer {
+  pointer-events: none;
+}
+
+.reveal-outline {
+  pointer-events: fill;
+}
+
+.fog-toggle[aria-pressed="true"] {
+  background: rgba(103, 232, 249, 0.2);
+  border-color: rgba(103, 232, 249, 0.55);
+  color: #cffafe;
+}
+
 .draft-area-vertex {
   fill: #67e8f9;
   stroke: #0b1024;

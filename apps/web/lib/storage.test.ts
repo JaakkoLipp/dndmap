@@ -27,6 +27,7 @@ const sampleSnapshot: CampaignMapSnapshot = {
       handout: { text: "Welcome", image: null }
     }
   ],
+  fogEnabled: false,
   viewport: { x: 0, y: 0, scale: 1 }
 };
 
@@ -62,7 +63,8 @@ describe("normalizeSnapshot", () => {
             { x: 1, y: 0 },
             { x: 1, y: 1 }
           ],
-          fillOpacity: 5
+          fillOpacity: 5,
+          isReveal: true
         }
       ]
     });
@@ -71,7 +73,15 @@ describe("normalizeSnapshot", () => {
     expect(area?.type).toBe("area");
     if (area?.type === "area") {
       expect(area.fillOpacity).toBe(1);
+      expect(area.isReveal).toBe(true);
     }
+  });
+
+  it("normalizes the fog flag", () => {
+    expect(normalizeSnapshot({ objects: [] })?.fogEnabled).toBe(false);
+    expect(
+      normalizeSnapshot({ objects: [], fogEnabled: true })?.fogEnabled
+    ).toBe(true);
   });
 });
 

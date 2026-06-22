@@ -92,6 +92,33 @@ describe("createArea", () => {
     expect(area?.type).toBe("area");
     expect(area?.fillOpacity).toBeGreaterThan(0);
     expect(area?.name).toBe("Region 1");
+    expect(area?.isReveal).toBe(false);
+  });
+
+  it("creates reveal areas that are player-visible and numbered separately", () => {
+    const region = createArea(
+      [],
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 }
+      ],
+      "faction"
+    );
+    const reveal = createArea(
+      region ? [region] : [],
+      [
+        { x: 0, y: 0 },
+        { x: 2, y: 0 },
+        { x: 2, y: 2 }
+      ],
+      "faction",
+      true
+    );
+
+    expect(reveal?.isReveal).toBe(true);
+    expect(reveal?.playerVisible).toBe(true);
+    expect(reveal?.name).toBe("Reveal 1");
   });
 });
 

@@ -61,6 +61,9 @@ export type AreaObject = BaseMapObject & {
   points: Point[];
   strokeWidth: number;
   fillOpacity: number;
+  // When true the area cuts a hole in the fog of war instead of being a
+  // decorative region.
+  isReveal?: boolean;
 };
 
 export type MapObject = MarkerObject | LabelObject | PathObject | AreaObject;
@@ -69,6 +72,8 @@ export type CampaignMapSnapshot = {
   title: string;
   image: MapImageState | null;
   objects: MapObject[];
+  // Fog of war hides the map outside reveal areas in player-facing views.
+  fogEnabled?: boolean;
   viewport: {
     x: number;
     y: number;

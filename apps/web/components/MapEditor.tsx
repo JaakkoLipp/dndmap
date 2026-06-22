@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CloudFog,
   Download,
   Eye,
   EyeOff,
@@ -19,6 +20,7 @@ import {
   PenLine,
   Plus,
   Save,
+  Sparkles,
   Trash2,
   Type,
   Users,
@@ -40,6 +42,7 @@ import type {
   WheelEvent as ReactWheelEvent
 } from "react";
 import type {
+  AreaObject,
   CampaignMapSnapshot,
   HandoutContent,
   MapImageState,
@@ -77,7 +80,8 @@ type Tool =
   | "label"
   | "line"
   | "freehand"
-  | "area";
+  | "area"
+  | "reveal";
 
 type ExportAudience = "dm" | "player";
 
@@ -117,6 +121,7 @@ type EditableObjectUpdates = Partial<{
   fontSize: number;
   strokeWidth: number;
   fillOpacity: number;
+  isReveal: boolean;
   handout: HandoutContent | null;
 }>;
 
@@ -143,10 +148,13 @@ const TOOLS: Array<{ id: Tool; label: string; icon: LucideIcon }> = [
   { id: "label", label: "Map Text", icon: Type },
   { id: "line", label: "Route", icon: Waypoints },
   { id: "freehand", label: "Trail", icon: PenLine },
-  { id: "area", label: "Area", icon: Hexagon }
+  { id: "area", label: "Area", icon: Hexagon },
+  { id: "reveal", label: "Reveal", icon: Sparkles }
 ];
 
 const AREA_CLOSE_DISTANCE = 14;
+
+const AREA_TOOLS: Tool[] = ["area", "reveal"];
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -176,14 +184,64 @@ function makeSnapshot(
   title: string,
   image: MapImageState | null,
   objects: MapObject[],
-  view: ViewState
+  view: ViewState,
+  fogEnabled: boolean
 ): CampaignMapSnapshot {
   return {
     title,
     image,
     objects,
+    fogEnabled,
     viewport: view
   };
+}
+
+function getRevealAreas(objects: MapObject[]) {
+  return objects.filter(
+    (object): object is AreaObject =>
+      object.type === "area" && Boolean(object.isReveal)
+  );
+}
+
+function drawFog(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  reveals: AreaObject[],
+  opacity: number
+) {
+  // Render fog on its own layer and punch reveal holes so the underlying map
+  // and notes are not erased.
+  const fog = document.createElement("canvas");
+  fog.width = Math.max(1, Math.floor(width));
+  fog.height = Math.max(1, Math.floor(height));
+  const fogContext = fog.getContext("2d");
+
+  if (!fogContext) {
+    return;
+  }
+
+  fogContext.fillStyle = "#04060f";
+  fogContext.globalAlpha = opacity;
+  fogContext.fillRect(0, 0, fog.width, fog.height);
+  fogContext.globalAlpha = 1;
+  fogContext.globalCompositeOperation = "destination-out";
+
+  reveals.forEach((area) => {
+    const [first, ...rest] = area.points;
+
+    if (!first) {
+      return;
+    }
+
+    fogContext.beginPath();
+    fogContext.moveTo(first.x, first.y);
+    rest.forEach((point) => fogContext.lineTo(point.x, point.y));
+    fogContext.closePath();
+    fogContext.fill();
+  });
+
+  context.drawImage(fog, 0, 0, width, height);
 }
 
 async function loadImageElement(src: string) {
@@ -296,7 +354,7 @@ function drawExportObject(
     }
   }
 
-  if (object.type === "area") {
+  if (object.type === "area" && !object.isReveal) {
     const [firstPoint, ...rest] = object.points;
 
     if (firstPoint) {
@@ -334,6 +392,12 @@ export function MapEditor({
   const dragRef = useRef<DragState | null>(null);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const hydratedRef = useRef(false);
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{
+    distance: number;
+    view: ViewState;
+    world: Point;
+  } | null>(null);
   const [title, setTitle] = useState(initialTitle);
   const [image, setImage] = useState<MapImageState | null>(initialImage);
   const [objects, setObjects] = useState<MapObject[]>(initialObjects);
@@ -349,6 +413,7 @@ export function MapEditor({
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [presentMode, setPresentMode] = useState(false);
   const [openHandoutId, setOpenHandoutId] = useState<string | null>(null);
+  const [fogEnabled, setFogEnabled] = useState(false);
 
   const activeTool: Tool = presentMode ? "pan" : tool;
 
@@ -378,6 +443,7 @@ export function MapEditor({
       setTitle(stored.title);
       setImage(stored.image);
       setObjects(stored.objects);
+      setFogEnabled(Boolean(stored.fogEnabled));
       setSelectedId(null);
       setStatus("Restored local campaign");
     }
@@ -393,7 +459,7 @@ export function MapEditor({
 
     const handle = window.setTimeout(() => {
       const result = saveStoredSnapshot(
-        makeSnapshot(title, image, objects, view)
+        makeSnapshot(title, image, objects, view, fogEnabled)
       );
 
       if (!result.ok && result.error) {
@@ -402,7 +468,7 @@ export function MapEditor({
     }, 600);
 
     return () => window.clearTimeout(handle);
-  }, [persistLocally, title, image, objects, view]);
+  }, [persistLocally, title, image, objects, view, fogEnabled]);
 
   useEffect(() => {
     if (!exportMenuOpen) {
@@ -446,6 +512,7 @@ export function MapEditor({
   const dmVisibleObjects = objects.filter((object) => object.dmVisible);
   const playerVisibleObjects = objects.filter((object) => object.playerVisible);
   const visibleObjects = presentMode ? playerVisibleObjects : dmVisibleObjects;
+  const revealAreas = getRevealAreas(objects);
   const openHandoutObject = openHandoutId
     ? objects.find((object) => object.id === openHandoutId) ?? null
     : null;
@@ -584,21 +651,26 @@ export function MapEditor({
   );
 
   const finishArea = useCallback(() => {
+    const isReveal = tool === "reveal";
     setDraftArea((currentDraft) => {
       if (currentDraft) {
-        const area = createArea(objects, currentDraft, activeCategory);
+        const area = createArea(objects, currentDraft, activeCategory, isReveal);
 
         if (area) {
           setObjects((currentObjects) => [...currentObjects, area]);
           setSelectedId(area.id);
           setStatus(`Added ${area.name}`);
+
+          if (isReveal) {
+            setFogEnabled(true);
+          }
         }
       }
 
       return null;
     });
     setAreaCursor(null);
-  }, [activeCategory, objects]);
+  }, [activeCategory, objects, tool]);
 
   const cancelArea = useCallback(() => {
     setDraftArea(null);
@@ -607,7 +679,7 @@ export function MapEditor({
 
   // Drop any in-progress area when the tool changes or presentation starts.
   useEffect(() => {
-    if (tool !== "area" || presentMode) {
+    if (!AREA_TOOLS.includes(tool) || presentMode) {
       setDraftArea(null);
       setAreaCursor(null);
     }
@@ -731,8 +803,57 @@ export function MapEditor({
     target.setPointerCapture(event.pointerId);
   };
 
+  // Track touch points; a second finger starts a pinch-to-zoom/pan gesture
+  // and cancels any in-progress single-pointer drawing.
+  const trackPointerForGesture = (event: ReactPointerEvent) => {
+    pointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY
+    });
+
+    if (pointersRef.current.size !== 2) {
+      return false;
+    }
+
+    const bounds = viewportRef.current?.getBoundingClientRect();
+    const points = [...pointersRef.current.values()];
+
+    if (bounds) {
+      const a = { x: points[0].x - bounds.left, y: points[0].y - bounds.top };
+      const b = { x: points[1].x - bounds.left, y: points[1].y - bounds.top };
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+
+      pinchRef.current = {
+        distance: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+        view: { ...view },
+        world: {
+          x: (mid.x - view.x) / view.scale,
+          y: (mid.y - view.y) / view.scale
+        }
+      };
+    }
+
+    dragRef.current = null;
+    setDraftPath(null);
+    setDraftArea(null);
+    setAreaCursor(null);
+    return true;
+  };
+
+  const releaseGesturePointer = (event: ReactPointerEvent) => {
+    pointersRef.current.delete(event.pointerId);
+
+    if (pointersRef.current.size < 2) {
+      pinchRef.current = null;
+    }
+  };
+
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (event.button !== 0) {
+      return;
+    }
+
+    if (trackPointerForGesture(event)) {
       return;
     }
 
@@ -765,7 +886,7 @@ export function MapEditor({
       return;
     }
 
-    if (activeTool === "area") {
+    if (AREA_TOOLS.includes(activeTool)) {
       // Click near the first vertex to close, otherwise drop a new vertex.
       if (draftArea && draftArea.length >= 3) {
         const first = draftArea[0];
@@ -781,7 +902,11 @@ export function MapEditor({
         currentDraft ? [...currentDraft, point] : [point]
       );
       setAreaCursor(point);
-      setStatus("Area: click the first point or press Enter to finish");
+      setStatus(
+        activeTool === "reveal"
+          ? "Reveal: click the first point or press Enter to finish"
+          : "Area: click the first point or press Enter to finish"
+      );
       return;
     }
 
@@ -798,6 +923,10 @@ export function MapEditor({
 
     event.stopPropagation();
 
+    if (trackPointerForGesture(event)) {
+      return;
+    }
+
     if (presentMode) {
       if (hasHandout(object)) {
         setOpenHandoutId(object.id);
@@ -807,7 +936,7 @@ export function MapEditor({
       return;
     }
 
-    if (activeTool === "area") {
+    if (AREA_TOOLS.includes(activeTool)) {
       // Forward to the canvas handler so vertices can be placed over objects.
       handlePointerDown(
         event as unknown as ReactPointerEvent<SVGSVGElement>
@@ -836,6 +965,39 @@ export function MapEditor({
   };
 
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (pinchRef.current) {
+      if (pointersRef.current.has(event.pointerId)) {
+        pointersRef.current.set(event.pointerId, {
+          x: event.clientX,
+          y: event.clientY
+        });
+      }
+
+      const points = [...pointersRef.current.values()];
+      const bounds = viewportRef.current?.getBoundingClientRect();
+
+      if (points.length >= 2 && bounds) {
+        const a = { x: points[0].x - bounds.left, y: points[0].y - bounds.top };
+        const b = { x: points[1].x - bounds.left, y: points[1].y - bounds.top };
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const distance = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const start = pinchRef.current;
+        const nextScale = clamp(
+          start.view.scale * (distance / start.distance),
+          0.08,
+          8
+        );
+
+        setView({
+          scale: nextScale,
+          x: mid.x - start.world.x * nextScale,
+          y: mid.y - start.world.y * nextScale
+        });
+      }
+
+      return;
+    }
+
     const activeDrag = dragRef.current;
 
     if (activeDrag?.kind === "pan") {
@@ -866,7 +1028,7 @@ export function MapEditor({
       return;
     }
 
-    if (activeTool === "area" && draftArea) {
+    if (AREA_TOOLS.includes(activeTool) && draftArea) {
       setAreaCursor(screenToWorld(event));
       return;
     }
@@ -896,7 +1058,10 @@ export function MapEditor({
   };
 
   const handlePointerUp = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (draftPath) {
+    const wasPinching = pinchRef.current !== null;
+    releaseGesturePointer(event);
+
+    if (!wasPinching && draftPath) {
       addPathObject(draftPath);
       setDraftPath(null);
     }
@@ -972,8 +1137,19 @@ export function MapEditor({
       }
 
       objects.forEach((object) => drawExportObject(context, object, audience));
+
+      // Player exports hide everything outside the revealed regions.
+      if (audience === "player" && fogEnabled) {
+        drawFog(
+          context,
+          worldSize.width,
+          worldSize.height,
+          getRevealAreas(objects),
+          0.94
+        );
+      }
     },
-    [image, objects, worldSize.height, worldSize.width]
+    [fogEnabled, image, objects, worldSize.height, worldSize.width]
   );
 
   const renderViewportCanvas = useCallback(
@@ -1109,7 +1285,7 @@ export function MapEditor({
 
   const saveCampaignFile = () => {
     downloadCampaignFile(
-      makeSnapshot(title, image, objects, view),
+      makeSnapshot(title, image, objects, view, fogEnabled),
       `${getExportBaseName()}-campaign.json`
     );
     setStatus("Campaign file saved");
@@ -1123,6 +1299,7 @@ export function MapEditor({
       setTitle(snapshot.title);
       setImage(snapshot.image);
       setObjects(snapshot.objects);
+      setFogEnabled(Boolean(snapshot.fogEnabled));
       setSelectedId(null);
       setStatus(`Loaded ${file.name}`);
     } catch (error) {
@@ -1136,7 +1313,7 @@ export function MapEditor({
     setStatus("Saving…");
 
     try {
-      const snapshot = makeSnapshot(title, image, objects, view);
+      const snapshot = makeSnapshot(title, image, objects, view, fogEnabled);
       if (onSave) {
         await onSave(snapshot);
         setStatus(`Saved ${new Date().toLocaleTimeString()}`);
@@ -1386,6 +1563,24 @@ export function MapEditor({
             </button>
           ) : (
             <>
+              <button
+                aria-pressed={fogEnabled}
+                className="tool-button icon-only fog-toggle"
+                onClick={() => {
+                  setFogEnabled((enabled) => !enabled);
+                  setStatus(
+                    fogEnabled ? "Fog of war off" : "Fog of war on"
+                  );
+                }}
+                title={
+                  fogEnabled
+                    ? "Fog of war on (players see only revealed areas)"
+                    : "Fog of war off"
+                }
+                type="button"
+              >
+                <CloudFog size={18} />
+              </button>
               {persistLocally ? (
                 <button
                   className="tool-button icon-only"
@@ -1765,7 +1960,8 @@ export function MapEditor({
                   </label>
                 ) : null}
 
-                {selectedObject.type === "area" ? (
+                {selectedObject.type === "area" &&
+                !selectedObject.isReveal ? (
                   <label>
                     <span>Fill</span>
                     <input
@@ -1780,6 +1976,29 @@ export function MapEditor({
                       value={Math.round(selectedObject.fillOpacity * 100)}
                     />
                   </label>
+                ) : null}
+
+                {selectedObject.type === "area" ? (
+                  <button
+                    aria-pressed={Boolean(selectedObject.isReveal)}
+                    className="visibility-toggle"
+                    onClick={() => {
+                      const nextReveal = !selectedObject.isReveal;
+                      updateSelectedObject({ isReveal: nextReveal });
+
+                      if (nextReveal) {
+                        setFogEnabled(true);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <CloudFog size={16} />
+                    <span>
+                      {selectedObject.isReveal
+                        ? "Fog reveal area"
+                        : "Use as fog reveal"}
+                    </span>
+                  </button>
                 ) : null}
 
                 <div className="handout-section">
@@ -1896,6 +2115,7 @@ export function MapEditor({
             <svg
               className="map-overlay"
               height={worldSize.height}
+              onPointerCancel={handlePointerUp}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -1918,6 +2138,12 @@ export function MapEditor({
                 const category = getCategoryMeta(object.category);
 
                 if (object.type === "area") {
+                  // Reveal areas only cut holes in the fog; they are invisible
+                  // to players and shown as a dashed outline to the DM.
+                  if (object.isReveal && presentMode) {
+                    return null;
+                  }
+
                   const polygonPoints = object.points
                     .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
                     .join(" ");
@@ -1937,14 +2163,27 @@ export function MapEditor({
                           points={polygonPoints}
                         />
                       ) : null}
-                      <polygon
-                        fill={object.color}
-                        fillOpacity={object.fillOpacity}
-                        points={polygonPoints}
-                        stroke={object.color}
-                        strokeLinejoin="round"
-                        strokeWidth={object.strokeWidth}
-                      />
+                      {object.isReveal ? (
+                        <polygon
+                          className="reveal-outline"
+                          fill={object.color}
+                          fillOpacity={0.06}
+                          points={polygonPoints}
+                          stroke={object.color}
+                          strokeDasharray="14 10"
+                          strokeLinejoin="round"
+                          strokeWidth={object.strokeWidth}
+                        />
+                      ) : (
+                        <polygon
+                          fill={object.color}
+                          fillOpacity={object.fillOpacity}
+                          points={polygonPoints}
+                          stroke={object.color}
+                          strokeLinejoin="round"
+                          strokeWidth={object.strokeWidth}
+                        />
+                      )}
                     </g>
                   );
                 }
@@ -2089,6 +2328,44 @@ export function MapEditor({
                     />
                   ))}
                 </g>
+              ) : null}
+
+              {fogEnabled ? (
+                <>
+                  <defs>
+                    <mask id="fog-reveal-mask">
+                      <rect
+                        fill="white"
+                        height={worldSize.height}
+                        width={worldSize.width}
+                        x={0}
+                        y={0}
+                      />
+                      {revealAreas.map((area) => (
+                        <polygon
+                          fill="black"
+                          key={area.id}
+                          points={area.points
+                            .map(
+                              (point) =>
+                                `${point.x.toFixed(1)},${point.y.toFixed(1)}`
+                            )
+                            .join(" ")}
+                        />
+                      ))}
+                    </mask>
+                  </defs>
+                  <rect
+                    className="fog-layer"
+                    fill="#04060f"
+                    fillOpacity={presentMode ? 0.94 : 0.4}
+                    height={worldSize.height}
+                    mask="url(#fog-reveal-mask)"
+                    width={worldSize.width}
+                    x={0}
+                    y={0}
+                  />
+                </>
               ) : null}
             </svg>
           </div>
